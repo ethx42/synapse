@@ -83,14 +83,23 @@ fn render_layer(label: &str, detail: &str, is_active: bool, layer_color: (u8, u8
     let text = format!("{}: {}", label, detail);
     
     if is_active {
-        // Bright color when active
-        format!("│ {:<20} │", text.truecolor(r, g, b).bold())
+        // Bright background color when active with white text
+        format!("{}", 
+            format!(" {:<20} ", text)
+                .on_truecolor(r, g, b)
+                .truecolor(255, 255, 255)
+                .bold()
+        )
     } else {
-        // Dim color when inactive (reduce brightness by ~60%)
-        let dim_r = (r as f32 * 0.4) as u8;
-        let dim_g = (g as f32 * 0.4) as u8;
-        let dim_b = (b as f32 * 0.4) as u8;
-        format!("│ {:<20} │", text.truecolor(dim_r, dim_g, dim_b))
+        // Dim background color when inactive (reduce brightness by ~70%)
+        let dim_r = (r as f32 * 0.3) as u8;
+        let dim_g = (g as f32 * 0.3) as u8;
+        let dim_b = (b as f32 * 0.3) as u8;
+        format!("{}", 
+            format!(" {:<20} ", text)
+                .on_truecolor(dim_r, dim_g, dim_b)
+                .truecolor(100, 100, 100)
+        )
     }
 }
 
@@ -119,28 +128,17 @@ fn render_osi_stack(osi_state: &OsiState) -> String {
     
     let mut lines = Vec::new();
     
-    // Border pieces (24 chars wide including borders)
-    let top_border = "┌──────────────────────┐";
-    let mid_border = "├──────────────────────┤";
-    let bot_border = "└──────────────────────┘";
-    
-    // Header - centered above boxes (each box is 24 chars wide, 2 spaces between)
-    lines.push(format!("         {}                    {}", 
+    // Header - centered above stacks
+    lines.push(format!("                 {}                  {}", 
         "CLIENT".bold(),
         "SERVER".bold()
     ));
     
-    // Top border
-    lines.push(format!("         {}  {}", top_border, top_border));
-    
     // Layer 7
-    lines.push(format!("{}  {}", 
+    lines.push(format!("         {}  {}", 
         render_layer("L7", "APPLICATION", client_l7_active, l7_color),
         render_layer("L7", "APPLICATION", server_l7_active, l7_color)
     ));
-    
-    // Separator
-    lines.push(format!("{}  {}", mid_border, mid_border));
     
     // Layer 4
     lines.push(format!("{}  {}", 
@@ -148,17 +146,11 @@ fn render_osi_stack(osi_state: &OsiState) -> String {
         render_layer("L4", "TRANSPORT", server_l4_active, l4_color)
     ));
     
-    // Separator
-    lines.push(format!("{}  {}", mid_border, mid_border));
-    
     // Layer 3
     lines.push(format!("{}  {}", 
         render_layer("L3", "NETWORK", client_l3_active, l3_color),
         render_layer("L3", "NETWORK", server_l3_active, l3_color)
     ));
-    
-    // Separator
-    lines.push(format!("{}  {}", mid_border, mid_border));
     
     // Layer 2
     lines.push(format!("{}  {}", 
@@ -166,17 +158,11 @@ fn render_osi_stack(osi_state: &OsiState) -> String {
         render_layer("L2", "DATA LINK", server_l2_active, l2_color)
     ));
     
-    // Separator
-    lines.push(format!("{}  {}", mid_border, mid_border));
-    
     // Layer 1
     lines.push(format!("{}  {}", 
         render_layer("L1", "PHYSICAL", client_l1_active, l1_color),
         render_layer("L1", "PHYSICAL", server_l1_active, l1_color)
     ));
-    
-    // Bottom border
-    lines.push(format!("{}  {}", bot_border, bot_border));
     
     // Network connection
     let network_arrow = if matches!(pos, PacketPosition::Network) {
