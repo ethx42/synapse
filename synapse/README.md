@@ -1,15 +1,44 @@
 # Synapse
 
-A bare-metal diagnostic tool that measures a system's true stimulus-response reflex time at the network level.
+A bare-metal diagnostic tool that measures a system's true stimulus-response reflex time at the application level.
 
-## Overview
+## What is Synapse? (Simple Explanation)
 
-Synapse consists of two components:
+Synapse is a **high-precision stopwatch for measuring how fast two applications communicate**.
 
-- **Server**: A minimal UDP echo server with zero-allocation hot path
-- **Client**: A precision timing client that measures round-trip network latency with sub-millisecond accuracy
+Think of it as an ultra-fast echo game:
 
-## Getting Started (For Rust Beginners)
+- **Client** shouts "HELLO!" with a sequence number
+- **Server** immediately bounces it back
+- **Measurement** starts when sent, stops when received
+
+This "round-trip latency" is measured thousands of times for precision.
+
+### Why It's Different
+
+Most diagnostic tools measure **kernel-to-kernel** latency (like `ping` using ICMP, where the OS kernel responds directly). Synapse measures the **complete application-to-application journey**:
+
+1. Client sends the packet (syscall + kernel)
+2. Packet travels through the network
+3. **Server application** processes it (kernel must wake the app and hand it the packet)
+4. Packet returns to client (network + kernel + syscall)
+
+This is crucial: the network may be fast, but the application might be slow due to GC pauses, scheduler overhead, or processing delays. Synapse captures the full application stack.
+
+### Design Principles
+
+- **UDP**: Minimal overhead, no connection ceremony
+- **Zero-allocation**: Server echoes packets without memory allocations
+- **Blocking I/O**: Single-focused execution, no async runtime overhead
+
+### The Verdict
+
+Synapse answers: **"Can this system respond in under 1 millisecond?"**
+
+- Mean < 1ms = ✓ PASS
+- Mean ≥ 1ms = ✗ FAIL
+
+## Getting Started
 
 If you're new to Rust and Cargo, follow these step-by-step instructions to get Synapse running on your system.
 
@@ -100,7 +129,7 @@ Ready to echo packets...
 Open a **second terminal window** (keep the server running in the first) and run the client:
 
 ```bash
-cargo run --release --bin client -- --server 127.0.0.1:8080 --packets 1000000
+cargo run --release --bin client -- --server 127.0.0.1:8080 --packets 500000
 ```
 
 **Note:** The `--` separator is required to pass arguments to the client (not to Cargo).
@@ -139,36 +168,6 @@ cargo run --release --bin client -- --packets 1000
 - On Linux/macOS, some OS tuning commands require `sudo`
 - The basic functionality doesn't require sudo - only advanced tuning does
 
-## Building
-
-```bash
-cargo build --release
-```
-
-The release build uses aggressive optimizations:
-
-- Link-Time Optimization (LTO)
-- Single codegen unit
-- Panic abort (no unwinding)
-
-## Usage
-
-### Start the Server
-
-```bash
-cargo run --release --bin server
-```
-
-The server listens on `0.0.0.0:8080` by default.
-
-### Run the Client
-
-```bash
-cargo run --release --bin client -- --server 127.0.0.1:8080 --packets 1000000
-```
-
-Note: The `--` separator is required to pass arguments to the client program (not to Cargo itself).
-
 #### Client Options
 
 - `--server <IP:PORT>`: Server address (default: `127.0.0.1:8080`)
@@ -177,11 +176,7 @@ Note: The `--` separator is required to pass arguments to the client program (no
 - `--update <N>`: Dashboard update interval (default: `100`)
 - `--timeout <ms>`: Socket timeout in milliseconds (default: `100`)
 
-## Performance Target
-
-**Goal: < 1ms average round-trip time**
-
-The tool will report PASS/FAIL based on this threshold.
+**Note:** The release build uses aggressive optimizations (LTO, single codegen unit, panic abort) for maximum performance.
 
 ## OS-Level Tuning (Recommended)
 
@@ -245,54 +240,116 @@ sudo chrt -f 99 ./target/release/client
 
 ## Interpreting Results
 
-The client outputs:
+### Real-Time Display During Test
 
-- **Statistical summary**: Mean, Min, Max, P50, P90, P99, P99.9
-- **Histogram visualization**: ASCII distribution of latencies
-- **Packet loss count**: Number of timeouts or sequence errors
-- **Verdict**: PASS if mean < 1ms, otherwise FAIL
-
-## Example Output
+While the test is running, you'll see a real-time display that updates every few hundred milliseconds:
 
 ```
-Warming up with 200 packets...
-Running test with 10000 packets...
-[Progress: 10000/10000] Current: 0.234ms | Mean: 0.187ms | P99: 0.421ms
+Warming up ✓ (200/200)
 
-=== Synapse Network Diagnostic Results ===
-Packets sent:     10000
-Packets lost:     0 (0.00%)
-
---- Latency Statistics (RTT) ---
-Mean:             187.3 µs
-Minimum:          142.1 µs
-Maximum:          523.8 µs
-P50 (median):     178.2 µs
-P90:              245.7 µs
-P99:              421.3 µs
-P99.9:            498.2 µs
-
---- Latency Distribution ---
-[Histogram visualization here]
-
-✓ PASS: Mean latency (0.187ms) is below 1ms threshold
+→ 0.016ms
+Mean: 0.023ms
+P99: 0.045ms
+Rate: 30.4k pkt/s
+████████████████████████████████████████  500000/500000  [00:00:16]
 ```
+
+**What each element means:**
+
+- **Warming up**: Initial phase that prepares the system (populates ARP tables, warms CPU caches). The ✓ indicates completion.
+
+- **→ (Current latency)**: The most recent packet's round-trip time. Color-coded:
+
+  - Green: < 0.5ms (excellent)
+  - Yellow: 0.5-1ms (acceptable)
+  - Red: > 1ms (needs attention)
+
+- **Mean**: Average latency across all packets measured so far. Color-coded green if < 1ms, red otherwise.
+
+- **P99**: The 99th percentile latency—99% of packets are faster than this value. Useful for spotting outliers.
+
+- **Rate**: Packets processed per second (k = thousands). Shows throughput of the measurement itself.
+
+- **Progress bar**: Visual representation of test progress:
+  - Filled blocks (█) show completed packets
+  - Empty blocks (░) show remaining packets
+  - Numbers show: `current/total [elapsed time]`
+
+### Final Results Summary
+
+After the test completes, you'll see a comprehensive summary:
+
+```
+┌─────────────────────────────┐
+│  Synapse Results            │
+└─────────────────────────────┘
+
+Packets:  500000 sent, 0 lost (0.00%)
+          └─ Packet loss should be 0% for reliable measurements
+
+Duration: 16.44s
+          └─ Test completed at 30.4k packets/second
+
+Latency Statistics (round-trip time):
+  Mean:      22.8 µs  ← Average latency
+  Min:       10.2 µs  ← Fastest packet
+  Max:     3016.8 µs  ← Slowest packet
+  P50:       16.1 µs  ← 50% of packets are faster than this (median)
+  P90:       40.1 µs  ← 90% of packets are faster than this
+  P99:       45.3 µs  ← 99% of packets are faster than this
+  P99.9:     82.8 µs  ← 99.9% of packets are faster than this
+
+Latency Distribution (packet count by range):
+      0-20 µs:  ██████████████████████████████  52.8% (264,000 packets)
+     20-40 µs:  ████████████████                31.4% (157,000 packets)
+     40-60 µs:  ████████                        14.2% ( 71,000 packets)
+     60-80 µs:  ▌                                1.4% (  7,000 packets)
+    80-100 µs:  ▌                                0.2% (  1,000 packets)
+       >10 ms:  ▌                               <0.1% (      1 packets) ← MAX: 3.0ms
+
+✓ PASS: Mean latency (0.023ms) is below 1ms threshold
+```
+
+**Understanding the Distribution:**
+
+The bucket distribution visualization uses:
+
+- **Bar length**: Relative to the largest bucket (longest bar = most packets)
+- **Color coding**: Green (>50%), Cyan (>10%), White (<10%), Red (outliers >10ms)
+- **Verdict**: ✓ PASS if Mean < 1ms, ✗ FAIL if Mean ≥ 1ms
+
+**Performance Factors:** System load, CPU frequency scaling, scheduler preemption, memory pressure, and OS-level tuning (see recommendations above) can all affect latency.
 
 ## Technical Details
+### What Does Synapse Measure?
 
-### Why Blocking I/O?
+Synapse measures **application-level round-trip latency**: `Client App → Client Kernel → Server Kernel → Server App → Server Kernel → Client Kernel → Client App`
 
-Synapse uses `std::net` (blocking I/O) instead of async runtimes like Tokio to:
+This captures the full application stack, including processing overhead, scheduler latency, memory allocation, and application-level pauses—unlike network-level tools that only measure kernel-to-kernel connectivity.
 
-- Minimize runtime overhead
-- Reduce jitter from executor scheduling
-- Achieve deterministic timing
+### OSI Model Layers
+
+Synapse's code operates at **Layer 7 (Application)** and **Layer 4 (Transport/UDP)**, bypassing Layers 5-6 since UDP is connectionless and uses raw bytes.
+
+However, the **latency measurement captures the complete journey** through all active OSI layers (7→4→3→2→1→network→1→2→3→4→7). The OS kernel handles Layers 3-1, but their processing time is included in the round-trip measurement.
+
+This means Synapse measures full application-to-application latency, including all application processing overhead and the entire network stack.
 
 ### Measurement Methodology
 
-1. **Warm-up phase**: Sends warmup packets to populate ARP tables and warm CPU/OS caches
-2. **Measurement phase**: Uses `Instant::now()` before send and immediately after receive
-3. **Post-processing**: Uses HDR Histogram for accurate percentile calculations
+1. **Warm-up phase**: Populates ARP tables and warms CPU/OS caches
+2. **Measurement phase**: Uses `Instant::now()` before send and after receive
+3. **Post-processing**: HDR Histogram for accurate percentile calculations
+4. **Blocking I/O**: Uses `std::net` instead of async runtimes for minimal overhead and deterministic timing
+
+### Message Format
+
+Minimal UDP protocol (8 bytes per packet):
+
+- **Client → Server**: 8-byte sequence number (u64, little-endian: 0, 1, 2, ...)
+- **Server → Client**: Echo response (same 8 bytes)
+
+The client validates the echoed sequence matches. Zero serialization overhead, no parsing, zero-allocation hot path.
 
 ### Limitations
 
