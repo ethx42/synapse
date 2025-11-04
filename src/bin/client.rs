@@ -6,6 +6,191 @@ use std::io::{self, Write};
 use std::net::UdpSocket;
 use std::time::{Duration, Instant};
 
+// OSI Layer visualization state machine
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum PacketPosition {
+    ClientL7,
+    ClientL4,
+    ClientL3,
+    ClientL2,
+    ClientL1,
+    Network,
+    ServerL1,
+    ServerL2,
+    ServerL3,
+    ServerL4,
+    ServerL7,
+    ReturnServerL7,
+    ReturnServerL4,
+    ReturnServerL3,
+    ReturnServerL2,
+    ReturnServerL1,
+    ReturnNetwork,
+    ReturnClientL1,
+    ReturnClientL2,
+    ReturnClientL3,
+    ReturnClientL4,
+    ReturnClientL7,
+}
+
+impl PacketPosition {
+    fn next(self) -> Self {
+        match self {
+            PacketPosition::ClientL7 => PacketPosition::ClientL4,
+            PacketPosition::ClientL4 => PacketPosition::ClientL3,
+            PacketPosition::ClientL3 => PacketPosition::ClientL2,
+            PacketPosition::ClientL2 => PacketPosition::ClientL1,
+            PacketPosition::ClientL1 => PacketPosition::Network,
+            PacketPosition::Network => PacketPosition::ServerL1,
+            PacketPosition::ServerL1 => PacketPosition::ServerL2,
+            PacketPosition::ServerL2 => PacketPosition::ServerL3,
+            PacketPosition::ServerL3 => PacketPosition::ServerL4,
+            PacketPosition::ServerL4 => PacketPosition::ServerL7,
+            PacketPosition::ServerL7 => PacketPosition::ReturnServerL7,
+            PacketPosition::ReturnServerL7 => PacketPosition::ReturnServerL4,
+            PacketPosition::ReturnServerL4 => PacketPosition::ReturnServerL3,
+            PacketPosition::ReturnServerL3 => PacketPosition::ReturnServerL2,
+            PacketPosition::ReturnServerL2 => PacketPosition::ReturnServerL1,
+            PacketPosition::ReturnServerL1 => PacketPosition::ReturnNetwork,
+            PacketPosition::ReturnNetwork => PacketPosition::ReturnClientL1,
+            PacketPosition::ReturnClientL1 => PacketPosition::ReturnClientL2,
+            PacketPosition::ReturnClientL2 => PacketPosition::ReturnClientL3,
+            PacketPosition::ReturnClientL3 => PacketPosition::ReturnClientL4,
+            PacketPosition::ReturnClientL4 => PacketPosition::ReturnClientL7,
+            PacketPosition::ReturnClientL7 => PacketPosition::ClientL7,
+        }
+    }
+}
+
+struct OsiState {
+    position: PacketPosition,
+}
+
+impl OsiState {
+    fn new() -> Self {
+        Self {
+            position: PacketPosition::ClientL7,
+        }
+    }
+
+    fn advance(&mut self) {
+        self.position = self.position.next();
+    }
+}
+
+fn render_layer(label: &str, detail: &str, is_active: bool, layer_color: (u8, u8, u8)) -> String {
+    let (r, g, b) = layer_color;
+    let text = format!("{}: {}", label, detail);
+    
+    if is_active {
+        // Bright color when active
+        format!("│ {:<20} │", text.truecolor(r, g, b).bold())
+    } else {
+        // Dim color when inactive (reduce brightness by ~60%)
+        let dim_r = (r as f32 * 0.4) as u8;
+        let dim_g = (g as f32 * 0.4) as u8;
+        let dim_b = (b as f32 * 0.4) as u8;
+        format!("│ {:<20} │", text.truecolor(dim_r, dim_g, dim_b))
+    }
+}
+
+fn render_osi_stack(osi_state: &OsiState) -> String {
+    let pos = osi_state.position;
+    
+    // Check which layers are active on each side
+    let client_l7_active = matches!(pos, PacketPosition::ClientL7 | PacketPosition::ReturnClientL7);
+    let client_l4_active = matches!(pos, PacketPosition::ClientL4 | PacketPosition::ReturnClientL4);
+    let client_l3_active = matches!(pos, PacketPosition::ClientL3 | PacketPosition::ReturnClientL3);
+    let client_l2_active = matches!(pos, PacketPosition::ClientL2 | PacketPosition::ReturnClientL2);
+    let client_l1_active = matches!(pos, PacketPosition::ClientL1 | PacketPosition::ReturnClientL1);
+    
+    let server_l7_active = matches!(pos, PacketPosition::ServerL7 | PacketPosition::ReturnServerL7);
+    let server_l4_active = matches!(pos, PacketPosition::ServerL4 | PacketPosition::ReturnServerL4);
+    let server_l3_active = matches!(pos, PacketPosition::ServerL3 | PacketPosition::ReturnServerL3);
+    let server_l2_active = matches!(pos, PacketPosition::ServerL2 | PacketPosition::ReturnServerL2);
+    let server_l1_active = matches!(pos, PacketPosition::ServerL1 | PacketPosition::ReturnServerL1);
+    
+    // Layer colors (RGB): Blue, Green, Yellow, Orange, Red
+    let l7_color = (74, 144, 226);   // Blue
+    let l4_color = (72, 187, 120);   // Green
+    let l3_color = (236, 201, 75);   // Yellow
+    let l2_color = (237, 137, 54);   // Orange
+    let l1_color = (245, 101, 101);  // Red
+    
+    let mut lines = Vec::new();
+    
+    // Border pieces (24 chars wide including borders)
+    let top_border = "┌──────────────────────┐";
+    let mid_border = "├──────────────────────┤";
+    let bot_border = "└──────────────────────┘";
+    
+    // Header - centered above boxes (each box is 24 chars wide, 2 spaces between)
+    lines.push(format!("         {}                    {}", 
+        "CLIENT".bold(),
+        "SERVER".bold()
+    ));
+    
+    // Top border
+    lines.push(format!("         {}  {}", top_border, top_border));
+    
+    // Layer 7
+    lines.push(format!("{}  {}", 
+        render_layer("L7", "APPLICATION", client_l7_active, l7_color),
+        render_layer("L7", "APPLICATION", server_l7_active, l7_color)
+    ));
+    
+    // Separator
+    lines.push(format!("{}  {}", mid_border, mid_border));
+    
+    // Layer 4
+    lines.push(format!("{}  {}", 
+        render_layer("L4", "TRANSPORT", client_l4_active, l4_color),
+        render_layer("L4", "TRANSPORT", server_l4_active, l4_color)
+    ));
+    
+    // Separator
+    lines.push(format!("{}  {}", mid_border, mid_border));
+    
+    // Layer 3
+    lines.push(format!("{}  {}", 
+        render_layer("L3", "NETWORK", client_l3_active, l3_color),
+        render_layer("L3", "NETWORK", server_l3_active, l3_color)
+    ));
+    
+    // Separator
+    lines.push(format!("{}  {}", mid_border, mid_border));
+    
+    // Layer 2
+    lines.push(format!("{}  {}", 
+        render_layer("L2", "DATA LINK", client_l2_active, l2_color),
+        render_layer("L2", "DATA LINK", server_l2_active, l2_color)
+    ));
+    
+    // Separator
+    lines.push(format!("{}  {}", mid_border, mid_border));
+    
+    // Layer 1
+    lines.push(format!("{}  {}", 
+        render_layer("L1", "PHYSICAL", client_l1_active, l1_color),
+        render_layer("L1", "PHYSICAL", server_l1_active, l1_color)
+    ));
+    
+    // Bottom border
+    lines.push(format!("{}  {}", bot_border, bot_border));
+    
+    // Network connection
+    let network_arrow = if matches!(pos, PacketPosition::Network) {
+        format!("                    {}        ", "──────────▶".bright_cyan().bold())
+    } else if matches!(pos, PacketPosition::ReturnNetwork) {
+        format!("                    {}        ", "◀──────────".bright_cyan().bold())
+    } else {
+        "                      ".to_string()
+    };
+    lines.push(network_arrow);
+    
+    lines.join("\n")
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "synapse-client")]
 #[command(about = "Bare-metal application latency diagnostic tool", long_about = None)]
@@ -96,6 +281,10 @@ fn measurement_phase(socket: &UdpSocket, packet_count: usize, update_interval: u
     
     let start_time = Instant::now();
     let mut last_update = Instant::now();
+    
+    // OSI visualization state
+    let mut osi_state = OsiState::new();
+    const SAMPLE_RATE: usize = 100; // Animate every 100th packet
 
     // Create progress bar
     let pb = ProgressBar::new(packet_count as u64);
@@ -151,15 +340,20 @@ fn measurement_phase(socket: &UdpSocket, packet_count: usize, update_interval: u
         // Update live stats less frequently to avoid clutter (every update_interval packets or every 500ms)
         if (i + 1) % update_interval == 0 || last_update.elapsed().as_millis() > 500 {
             if !latencies.is_empty() {
-                update_live_stats(&pb, &latencies, start_time);
+                update_live_stats(&pb, &latencies, start_time, &osi_state);
             }
             last_update = Instant::now();
+        }
+        
+        // Advance OSI animation on sampled packets
+        if (i + 1) % SAMPLE_RATE == 0 {
+            osi_state.advance();
         }
     }
 
     // Update stats one final time before finishing
     if !latencies.is_empty() {
-        update_live_stats(&pb, &latencies, start_time);
+        update_live_stats(&pb, &latencies, start_time, &osi_state);
     }
     
     // Finish progress bar but keep it visible
@@ -174,6 +368,7 @@ fn update_live_stats(
     pb: &ProgressBar,
     latencies: &[u64],
     start_time: Instant,
+    osi_state: &OsiState,
 ) {
     let last = latencies.last().unwrap();
     let mean = latencies.iter().sum::<u64>() as f64 / latencies.len() as f64;
@@ -214,11 +409,40 @@ fn update_live_stats(
         mean_str.red()
     };
     
+    // Render OSI visualization
+    let osi_viz = render_osi_stack(osi_state);
+    let osi_lines: Vec<&str> = osi_viz.lines().collect();
+    
+    // Build combined display with metrics on left, OSI on right
+    let metrics_lines = vec![
+        format!("→ {}ms", last_color),
+        format!("Mean: {}ms", mean_color),
+        format!("P99: {:.3}ms", p99_ms),
+        format!("Rate: {:.1}k pkt/s", rate / 1000.0),
+    ];
+    
+    let mut combined = Vec::new();
+    
+    // Combine metrics and OSI lines side by side
+    let max_lines = metrics_lines.len().max(osi_lines.len());
+    for i in 0..max_lines {
+        let metric_part = if i < metrics_lines.len() {
+            format!("{:<25}", metrics_lines[i])
+        } else {
+            " ".repeat(25)
+        };
+        
+        let osi_part = if i < osi_lines.len() {
+            osi_lines[i].to_string()
+        } else {
+            String::new()
+        };
+        
+        combined.push(format!("{}{}", metric_part, osi_part));
+    }
+    
     // Use indicatif's message field with newlines - updates in place without creating new lines
-    let msg = format!(
-        "→ {}ms\nMean: {}ms\nP99: {:.3}ms\nRate: {:.1}k pkt/s",
-        last_color, mean_color, p99_ms, rate / 1000.0
-    );
+    let msg = combined.join("\n");
     pb.set_message(msg);
 }
 

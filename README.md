@@ -242,19 +242,30 @@ sudo chrt -f 99 ./target/release/client
 
 ### Real-Time Display During Test
 
-While the test is running, you'll see a real-time display that updates every few hundred milliseconds:
+While the test is running, you'll see a real-time display that updates every few hundred milliseconds, showing both performance metrics and a live visualization of packet flow through the OSI layers:
 
 ```
 Warming up ✓ (200/200)
 
-→ 0.016ms
-Mean: 0.023ms
-P99: 0.045ms
-Rate: 30.4k pkt/s
-████████████████████████████████████████  500000/500000  [00:00:16]
+→ 0.039ms                CLIENT                    SERVER
+Mean: 0.022ms            ┌──────────────────────┐  ┌──────────────────────┐
+P99: 0.045ms             │ L7: APPLICATION      │  │ L7: APPLICATION      │
+Rate: 31.1k pkt/s        ├──────────────────────┤  ├──────────────────────┤
+                         │ L4: TRANSPORT        │  │ L4: TRANSPORT        │
+                         ├──────────────────────┤  ├──────────────────────┤
+                         │ L3: NETWORK          │  │ L3: NETWORK          │
+                         ├──────────────────────┤  ├──────────────────────┤
+                         │ L2: DATA LINK        │  │ L2: DATA LINK        │
+                         ├──────────────────────┤  ├──────────────────────┤
+                         │ L1: PHYSICAL         │  │ L1: PHYSICAL         │
+                         └──────────────────────┘  └──────────────────────┘
+                                            ──────────▶
+████████████████████████████████  500000/500000  [00:00:16]
 ```
 
 **What each element means:**
+
+**Left Panel - Performance Metrics:**
 
 - **Warming up**: Initial phase that prepares the system (populates ARP tables, warms CPU caches). The ✓ indicates completion.
 
@@ -274,6 +285,20 @@ Rate: 30.4k pkt/s
   - Filled blocks (█) show completed packets
   - Empty blocks (░) show remaining packets
   - Numbers show: `current/total [elapsed time]`
+
+**Right Panel - OSI Layer Visualization:**
+
+- **Educational visualization**: Animated representation of the packet journey through OSI layers, synchronized with actual packet transmission (not kernel-instrumented)
+- **Layer highlighting**: When a layer is **bright**, the animation shows a packet traversing that layer
+- **Color scheme**:
+  - Layer 7 (Application): Blue → Bright blue when active
+  - Layer 4 (Transport): Green → Bright green when active
+  - Layer 3 (Network): Yellow → Bright yellow when active
+  - Layer 2 (Data Link): Orange → Bright orange when active
+  - Layer 1 (Physical): Red → Bright red when active
+- **Animation flow**: Shows conceptual journey—client stack (descending) → network → server stack (ascending) → return path
+- **Sampling**: Animation advances every 100th packet to remain human-perceivable at high throughput
+- **Note**: Layers 5 (Session) and 6 (Presentation) are omitted because UDP is connectionless and uses raw bytes
 
 ### Final Results Summary
 
@@ -321,6 +346,7 @@ The bucket distribution visualization uses:
 **Performance Factors:** System load, CPU frequency scaling, scheduler preemption, memory pressure, and OS-level tuning (see recommendations above) can all affect latency.
 
 ## Technical Details
+
 ### What Does Synapse Measure?
 
 Synapse measures **application-level round-trip latency**: `Client App → Client Kernel → Server Kernel → Server App → Server Kernel → Client Kernel → Client App`
