@@ -25,30 +25,37 @@ const MEDIUM_PRECISION_THRESHOLD: f64 = 1.0;
 const LABEL_WIDTH: usize = 12;
 
 impl Reporter {
-    /// Renders a histogram bar character based on the count relative to the maximum count.
+    /// Renders a histogram bar character based on percentage relative to the maximum percentage.
     ///
     /// Uses Unicode block characters to visually represent relative sizes:
     /// - Full blocks (█) for bars that fill the width
     /// - Partial blocks (▉▊▋▌▍▎▏) for very small values that would round to 0
     ///   This ensures even tiny percentages are visible and differentiated.
     ///
+    /// This method scales bars based on percentages, ensuring the visual representation
+    /// matches the displayed percentages proportionally.
+    ///
     /// # Arguments
     ///
-    /// * `count` - The count for this bucket
-    /// * `max_count` - The maximum count across all buckets (for scaling)
+    /// * `percentage` - The percentage value for this bucket
+    /// * `max_percentage` - The maximum percentage across all buckets (for scaling)
     /// * `bar_width` - The maximum width of the bar in characters
     ///
     /// # Returns
     ///
-    /// A string containing the bar characters, or empty string if count is 0
-    fn render_bar(count: usize, max_count: usize, bar_width: usize) -> String {
-        if count == 0 {
+    /// A string containing the bar characters, or empty string if percentage is 0
+    fn render_bar_from_percentage(
+        percentage: f64,
+        max_percentage: f64,
+        bar_width: usize,
+    ) -> String {
+        if percentage <= 0.0 {
             return String::new();
         }
 
-        // Calculate bar length (both integer and fractional parts)
-        let bar_length_fractional = if max_count > 0 {
-            (count as f64 / max_count as f64) * bar_width as f64
+        // Calculate bar length (both integer and fractional parts) based on percentage
+        let bar_length_fractional = if max_percentage > 0.0 {
+            (percentage / max_percentage) * bar_width as f64
         } else {
             0.0
         };
@@ -58,12 +65,9 @@ impl Reporter {
         if bar_length >= bar_width {
             // Full width bar
             "█".repeat(bar_width)
-        } else if bar_length >= 2 {
-            // Multiple full blocks
-            "█".repeat(bar_length)
         } else if bar_length >= 1 {
-            // Single half block
-            "▌".to_string()
+            // One or more full blocks
+            "█".repeat(bar_length)
         } else {
             // When bar_length rounds to 0, use fractional part to show relative size
             // This ensures different buckets show different visual indicators
@@ -313,8 +317,13 @@ impl Reporter {
             }
         }
 
-        // Find max count for bar scaling
-        let max_count = *bucket_counts.iter().max().unwrap_or(&1);
+        // Calculate percentages first to find max percentage for bar scaling
+        let mut percentages = Vec::new();
+        for count in &bucket_counts {
+            let percentage = (*count as f64 / total_packets as f64) * 100.0;
+            percentages.push(percentage);
+        }
+        let max_percentage = percentages.iter().fold(0.0f64, |a, &b| a.max(b));
 
         // Print each bucket
         for (i, &(_, _, label)) in buckets.iter().enumerate() {
@@ -323,8 +332,10 @@ impl Reporter {
                 continue; // Skip empty buckets beyond 100µs for cleaner output
             }
 
-            let percentage = (count as f64 / total_packets as f64) * 100.0;
-            let bar = Self::render_bar(count, max_count, HISTOGRAM_BAR_WIDTH);
+            let percentage = percentages[i];
+            // Scale bars based on percentage, not count, to match displayed percentages
+            let bar =
+                Self::render_bar_from_percentage(percentage, max_percentage, HISTOGRAM_BAR_WIDTH);
             let label_colored = Self::colorize_label(label, percentage);
             let pct_str = Self::format_percentage(percentage);
 
@@ -341,7 +352,8 @@ impl Reporter {
         if outliers > 0 {
             let percentage = (outliers as f64 / total_packets as f64) * 100.0;
             let max_ms = max_latency as f64 / 1_000_000.0;
-            let outlier_bar = Self::render_bar(outliers, max_count, HISTOGRAM_BAR_WIDTH);
+            let outlier_bar =
+                Self::render_bar_from_percentage(percentage, max_percentage, HISTOGRAM_BAR_WIDTH);
             let pct_str = Self::format_percentage(percentage);
 
             // Pad outlier label to match bucket label width
