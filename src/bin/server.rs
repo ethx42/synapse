@@ -1,5 +1,6 @@
 use std::net::UdpSocket;
 use std::process;
+use synapse::server::ServerMonitor;
 
 fn main() {
     let addr = "0.0.0.0:8080";
@@ -16,6 +17,13 @@ fn main() {
         }
     };
 
+    // Initialize server monitor (updates every 100ms for smooth display)
+    let monitor = ServerMonitor::new(100);
+    let counters = monitor.counters();
+
+    // Start background display thread (non-blocking)
+    monitor.start_display();
+
     // Pre-allocate a single receive buffer outside the loop (64 bytes is sufficient)
     let mut buf = [0u8; 64];
 
@@ -25,12 +33,23 @@ fn main() {
     loop {
         match socket.recv_from(&mut buf) {
             Ok((len, src)) => {
+                // Increment received counter (atomic, lock-free, minimal overhead)
+                counters.increment_received();
+
                 // Immediately send back the exact same payload
-                if let Err(e) = socket.send_to(&buf[..len], src) {
-                    eprintln!("Failed to send to {}: {}", src, e);
+                match socket.send_to(&buf[..len], src) {
+                    Ok(_) => {
+                        // Increment sent counter (atomic, lock-free, minimal overhead)
+                        counters.increment_sent();
+                    }
+                    Err(e) => {
+                        counters.increment_error();
+                        eprintln!("Failed to send to {}: {}", src, e);
+                    }
                 }
             }
             Err(e) => {
+                counters.increment_error();
                 eprintln!("Failed to receive: {}", e);
             }
         }

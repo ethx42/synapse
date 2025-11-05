@@ -9,7 +9,6 @@ pub enum PacketPosition {
     ClientL3,
     ClientL2,
     ClientL1,
-    Network,
     ServerL1,
     ServerL2,
     ServerL3,
@@ -20,7 +19,6 @@ pub enum PacketPosition {
     ReturnServerL3,
     ReturnServerL2,
     ReturnServerL1,
-    ReturnNetwork,
     ReturnClientL1,
     ReturnClientL2,
     ReturnClientL3,
@@ -35,8 +33,7 @@ impl PacketPosition {
             PacketPosition::ClientL4 => PacketPosition::ClientL3,
             PacketPosition::ClientL3 => PacketPosition::ClientL2,
             PacketPosition::ClientL2 => PacketPosition::ClientL1,
-            PacketPosition::ClientL1 => PacketPosition::Network,
-            PacketPosition::Network => PacketPosition::ServerL1,
+            PacketPosition::ClientL1 => PacketPosition::ServerL1,
             PacketPosition::ServerL1 => PacketPosition::ServerL2,
             PacketPosition::ServerL2 => PacketPosition::ServerL3,
             PacketPosition::ServerL3 => PacketPosition::ServerL4,
@@ -46,8 +43,7 @@ impl PacketPosition {
             PacketPosition::ReturnServerL4 => PacketPosition::ReturnServerL3,
             PacketPosition::ReturnServerL3 => PacketPosition::ReturnServerL2,
             PacketPosition::ReturnServerL2 => PacketPosition::ReturnServerL1,
-            PacketPosition::ReturnServerL1 => PacketPosition::ReturnNetwork,
-            PacketPosition::ReturnNetwork => PacketPosition::ReturnClientL1,
+            PacketPosition::ReturnServerL1 => PacketPosition::ReturnClientL1,
             PacketPosition::ReturnClientL1 => PacketPosition::ReturnClientL2,
             PacketPosition::ReturnClientL2 => PacketPosition::ReturnClientL3,
             PacketPosition::ReturnClientL3 => PacketPosition::ReturnClientL4,
@@ -197,22 +193,8 @@ fn render_osi_stack(osi_state: &OsiState) -> String {
         render_layer("L1", "PHYSICAL", server_l1_active, l1_color)
     ));
 
-    // Network connection
-    let network_arrow = if matches!(pos, PacketPosition::Network) {
-        format!(
-            "                    {}        ",
-            "──────────▶".bright_cyan().bold()
-        )
-    } else if matches!(pos, PacketPosition::ReturnNetwork) {
-        format!(
-            "                    {}        ",
-            "◀──────────".bright_cyan().bold()
-        )
-    } else {
-        "                      ".to_string()
-    };
-    lines.push(network_arrow);
-
+    // Break line
+    lines.push("                      ".to_string());
     lines.join("\n")
 }
 
@@ -245,6 +227,12 @@ impl OsiVisualizer {
     pub fn render(&self) -> String {
         render_osi_stack(&self.state)
     }
+
+    /// Get the current packet position (for testing/debugging)
+    #[cfg(test)]
+    fn current_position(&self) -> PacketPosition {
+        self.state.position
+    }
 }
 
 impl Default for OsiVisualizer {
@@ -275,15 +263,23 @@ mod tests {
     #[test]
     fn test_visualizer_advance() {
         let mut viz = OsiVisualizer::new();
+        assert_eq!(viz.current_position(), PacketPosition::ClientL7);
         let initial_render = viz.render();
 
-        // Advance multiple times to ensure visualization changes
+        // Advance through enough positions to see a clear difference
+        // From ClientL7 -> ClientL4 -> ClientL3 -> ClientL2 -> ClientL1 -> ServerL1
+        // This should change from Client L7 active to Server L1 active
         for _ in 0..5 {
             viz.advance();
         }
+        assert_eq!(viz.current_position(), PacketPosition::ServerL1);
         let after_render = viz.render();
-        // After advancing multiple times, the visualization should change
-        assert_ne!(initial_render, after_render);
+        // After advancing through different layers, the visualization should change
+        // The active layer should move from Client L7 to Server L1
+        assert_ne!(
+            initial_render, after_render,
+            "Visualization should change after advancing positions"
+        );
     }
 
     #[test]
@@ -298,14 +294,14 @@ mod tests {
         let mut pos = PacketPosition::ClientL7;
         let start = pos;
 
-        // Count positions: There are 22 positions in the cycle
-        // ClientL7 -> ClientL4 -> ClientL3 -> ClientL2 -> ClientL1 -> Network ->
+        // Count positions: There are 20 positions in the cycle
+        // ClientL7 -> ClientL4 -> ClientL3 -> ClientL2 -> ClientL1 ->
         // ServerL1 -> ServerL2 -> ServerL3 -> ServerL4 -> ServerL7 ->
         // ReturnServerL7 -> ReturnServerL4 -> ReturnServerL3 -> ReturnServerL2 -> ReturnServerL1 ->
-        // ReturnNetwork -> ReturnClientL1 -> ReturnClientL2 -> ReturnClientL3 -> ReturnClientL4 -> ReturnClientL7 -> ClientL7
+        // ReturnClientL1 -> ReturnClientL2 -> ReturnClientL3 -> ReturnClientL4 -> ReturnClientL7 -> ClientL7
 
         // Advance through all positions in the cycle
-        for _ in 0..22 {
+        for _ in 0..20 {
             pos = pos.next();
         }
 

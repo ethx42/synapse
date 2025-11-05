@@ -12,6 +12,7 @@ pub struct ProgressTracker {
     visualizer: OsiVisualizer,
     last_update: Instant,
     update_interval: usize,
+    last_stats_message: String,
 }
 
 impl ProgressTracker {
@@ -39,6 +40,7 @@ impl ProgressTracker {
             visualizer: OsiVisualizer::new(),
             last_update: Instant::now(),
             update_interval,
+            last_stats_message: String::new(),
         })
     }
 
@@ -51,36 +53,112 @@ impl ProgressTracker {
     ) -> Result<()> {
         self.pb.inc(1);
 
-        // Update live stats less frequently to avoid clutter
-        if (packet_index + 1) % self.update_interval == 0
-            || self.last_update.elapsed().as_millis() > LIVE_STATS_UPDATE_INTERVAL_MS as u128
-        {
-            if !latencies.is_empty() {
-                self.update_live_stats(latencies, start_time)?;
-            }
-            self.last_update = Instant::now();
+        // Advance OSI animation on sampled packets (lightweight operation)
+        let should_advance = self.visualizer.should_update(packet_index);
+        let mut should_update_display = false;
+
+        if should_advance {
+            self.visualizer.advance();
+            // When animation advances, update display to show the new state
+            // This ensures smooth animation without expensive stats calculations
+            should_update_display = true;
         }
 
-        // Advance OSI animation on sampled packets
-        if self.visualizer.should_update(packet_index) {
-            self.visualizer.advance();
+        // Update live stats less frequently to avoid performance overhead
+        // Full stats update (with expensive calculations) happens at configured intervals
+        let should_update_stats = (packet_index + 1) % self.update_interval == 0
+            || self.last_update.elapsed().as_millis() > LIVE_STATS_UPDATE_INTERVAL_MS as u128;
+
+        // Update display when animation advances OR when full stats update is due
+        if should_update_stats {
+            if !latencies.is_empty() {
+                // Full update with expensive stats calculations
+                self.update_live_stats(latencies, start_time)?;
+                self.last_update = Instant::now();
+            }
+        } else if should_update_display {
+            // Lightweight update: update OSI visualization, reuse last stats
+            // This allows smooth animation without expensive recalculations
+            self.update_osi_display_only()?;
         }
 
         Ok(())
     }
 
+    /// Update only the OSI visualization display (lightweight, reuse last stats)
+    fn update_osi_display_only(&mut self) -> Result<()> {
+        // Render OSI visualization
+        let osi_viz = self.visualizer.render();
+        let osi_lines: Vec<&str> = osi_viz.lines().collect();
+
+        // Reuse last stats message if available, otherwise just show OSI
+        if !self.last_stats_message.is_empty() {
+            // Parse last stats to extract metrics lines
+            let last_lines: Vec<&str> = self.last_stats_message.lines().collect();
+            let metrics_lines: Vec<String> = last_lines
+                .iter()
+                .take(4) // First 4 lines are metrics
+                .map(|s| {
+                    // Extract metric part (first 25 chars)
+                    if s.len() >= 25 {
+                        s[..25].to_string()
+                    } else {
+                        format!("{:<25}", s)
+                    }
+                })
+                .collect();
+
+            // Combine metrics with updated OSI visualization
+            let mut combined = Vec::new();
+            let max_lines = metrics_lines.len().max(osi_lines.len());
+            for i in 0..max_lines {
+                let metric_part = if i < metrics_lines.len() {
+                    metrics_lines[i].clone()
+                } else {
+                    " ".repeat(25)
+                };
+
+                let osi_part = if i < osi_lines.len() {
+                    osi_lines[i].to_string()
+                } else {
+                    String::new()
+                };
+
+                combined.push(format!("{}{}", metric_part, osi_part));
+            }
+
+            let msg = combined.join("\n");
+            self.pb.set_message(msg);
+        } else {
+            // No stats yet, just show OSI visualization
+            let mut combined = Vec::new();
+            for line in osi_lines {
+                combined.push(format!("{:<25}{}", "", line));
+            }
+            let msg = combined.join("\n");
+            self.pb.set_message(msg);
+        }
+        Ok(())
+    }
+
     /// Update the live statistics display
-    fn update_live_stats(&self, latencies: &[u64], start_time: Instant) -> Result<()> {
+    fn update_live_stats(&mut self, latencies: &[u64], start_time: Instant) -> Result<()> {
         let last = latencies
             .last()
             .ok_or_else(|| ClientError::Measurement("No latencies available".into()))?;
         let mean = latencies.iter().sum::<u64>() as f64 / latencies.len() as f64;
 
         // Calculate a quick p99 estimate for live feedback
-        let mut sorted = latencies.to_vec();
-        sorted.sort_unstable();
-        let p99_idx = (sorted.len() as f64 * 0.99) as usize;
-        let p99 = sorted.get(p99_idx).unwrap_or(&0);
+        // Only calculate if we have enough samples to make it meaningful
+        let p99 = if latencies.len() > 10 {
+            let mut sorted = latencies.to_vec();
+            sorted.sort_unstable();
+            let p99_idx = (sorted.len() as f64 * 0.99) as usize;
+            *sorted.get(p99_idx).unwrap_or(&0)
+        } else {
+            // For small samples, use max as approximation
+            *latencies.iter().max().unwrap_or(&0)
+        };
 
         // Calculate packet rate
         let elapsed = start_time.elapsed().as_secs_f64();
@@ -93,7 +171,7 @@ impl ProgressTracker {
         // Color code latency
         let last_ms = *last as f64 / 1_000_000.0;
         let mean_ms = mean / 1_000_000.0;
-        let p99_ms = *p99 as f64 / 1_000_000.0;
+        let p99_ms = p99 as f64 / 1_000_000.0;
 
         let last_str = format!("{:.3}", last_ms);
         let mean_str = format!("{:.3}", mean_ms);
@@ -146,6 +224,8 @@ impl ProgressTracker {
 
         // Use indicatif's message field with newlines
         let msg = combined.join("\n");
+        // Cache the message for lightweight updates
+        self.last_stats_message = msg.clone();
         self.pb.set_message(msg);
         Ok(())
     }

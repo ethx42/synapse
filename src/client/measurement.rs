@@ -62,21 +62,36 @@ pub fn measure_single_packet<S: NetworkSocket>(
     }
 }
 
-/// Perform warmup phase to stabilize network conditions
+/// Perform warmup phase to stabilize system conditions
+///
+/// This phase populates ARP tables, warms CPU/OS caches, and establishes
+/// baseline network paths before measurement begins.
 pub fn warmup_phase<S: NetworkSocket>(socket: &mut S, warmup_count: usize) -> Result<()> {
     let spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
     let mut spinner_idx = 0;
+    let mut successful_packets = 0usize;
+    let mut lost_packets = 0usize;
 
     for seq in 0..warmup_count {
         let sequence = SequenceNumber(seq as u64);
 
         // Send and receive, but discard results
-        match measure_single_packet(socket, sequence)? {
-            Some(_) => {
+        match measure_single_packet(socket, sequence) {
+            Ok(Some(_)) => {
+                successful_packets += 1;
                 debug!(packet_num = seq + 1, "Warmup packet completed");
             }
-            None => {
+            Ok(None) => {
+                lost_packets += 1;
                 warn!(packet_num = seq + 1, "Warmup packet lost or timed out");
+            }
+            Err(e) => {
+                // Error occurred - return with context about how many packets were processed
+                let actual_packets = successful_packets + lost_packets;
+                return Err(ClientError::Measurement(format!(
+                    "Warmup phase interrupted after {} packets ({} successful, {} lost): {}",
+                    actual_packets, successful_packets, lost_packets, e
+                )));
             }
         }
 
@@ -116,8 +131,8 @@ pub fn measurement_phase<S: NetworkSocket>(
     for i in 0..packet_count {
         let sequence = SequenceNumber(i as u64);
 
-        match measure_single_packet(socket, sequence)? {
-            Some(latency_ns) => {
+        match measure_single_packet(socket, sequence) {
+            Ok(Some(latency_ns)) => {
                 latencies.push(latency_ns);
                 debug!(
                     packet_num = i + 1,
@@ -125,9 +140,20 @@ pub fn measurement_phase<S: NetworkSocket>(
                     "Measurement packet completed"
                 );
             }
-            None => {
+            Ok(None) => {
                 lost_packets += 1;
                 warn!(packet_num = i + 1, "Measurement packet lost or timed out");
+            }
+            Err(e) => {
+                // Error occurred - return with context about how many packets were processed
+                let actual_packets = latencies.len() + lost_packets;
+                return Err(ClientError::Measurement(format!(
+                    "Measurement phase interrupted after {} packets ({} successful, {} lost): {}",
+                    actual_packets,
+                    latencies.len(),
+                    lost_packets,
+                    e
+                )));
             }
         }
 

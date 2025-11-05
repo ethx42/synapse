@@ -47,7 +47,7 @@ fn run() -> Result<()> {
     info!(warmup_count = config.warmup, "Starting warmup phase");
     warmup_phase(&mut socket, config.warmup)
         .map_err(|e| anyhow::anyhow!("{}", e))
-        .with_context(|| format!("Warmup phase failed after {} packets", config.warmup))?;
+        .with_context(|| "Warmup phase failed")?;
     info!("Warmup phase completed");
 
     // Measurement phase
@@ -58,7 +58,7 @@ fn run() -> Result<()> {
     );
     let result = measurement_phase(&mut socket, config.packets, config.update)
         .map_err(|e| anyhow::anyhow!("{}", e))
-        .with_context(|| format!("Measurement phase failed after {} packets", config.packets))?;
+        .with_context(|| "Measurement phase failed")?;
     info!(
         packets_received = result.latencies.len(),
         packets_lost = result.lost_packets,
