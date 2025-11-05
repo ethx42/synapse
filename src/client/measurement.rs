@@ -4,6 +4,7 @@ use crate::client::progress::ProgressTracker;
 use crate::protocol::{Packet, SequenceNumber};
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
+use tracing::{debug, warn};
 
 /// Represents a single measurement result
 #[derive(Debug, Clone)]
@@ -30,6 +31,7 @@ pub fn measure_single_packet<S: NetworkSocket>(
     let packet = Packet::new(sequence);
     let t1 = Instant::now();
 
+    debug!("Sending packet");
     socket.send_packet(&packet)?;
 
     match socket.recv_packet() {
@@ -38,15 +40,25 @@ pub fn measure_single_packet<S: NetworkSocket>(
             
             if recv_packet.sequence == sequence {
                 let latency_ns = (t2 - t1).as_nanos() as u64;
+                debug!(latency_ns = latency_ns, "Packet received successfully");
                 Ok(Some(latency_ns))
             } else {
+                warn!(
+                    expected = sequence.0,
+                    received = recv_packet.sequence.0,
+                    "Sequence mismatch"
+                );
                 Ok(None) // Sequence mismatch
             }
         }
         Err(ClientError::Io(e)) if e.kind() == std::io::ErrorKind::TimedOut => {
+            debug!("Packet receive timeout");
             Ok(None) // Timeout
         }
-        Err(e) => Err(e),
+        Err(e) => {
+            warn!(error = %e, "Error receiving packet");
+            Err(e)
+        },
     }
 }
 
@@ -62,8 +74,13 @@ pub fn warmup_phase<S: NetworkSocket>(
         let sequence = SequenceNumber(seq as u64);
         
         // Send and receive, but discard results
-        if measure_single_packet(socket, sequence)?.is_some() {
-            // Packet received successfully
+        match measure_single_packet(socket, sequence)? {
+            Some(_) => {
+                debug!(packet_num = seq + 1, "Warmup packet completed");
+            }
+            None => {
+                warn!(packet_num = seq + 1, "Warmup packet lost or timed out");
+            }
         }
         
         // Update spinner every 10 packets for smooth animation
@@ -105,15 +122,23 @@ pub fn measurement_phase<S: NetworkSocket>(
         match measure_single_packet(socket, sequence)? {
             Some(latency_ns) => {
                 latencies.push(latency_ns);
+                debug!(packet_num = i + 1, latency_ns = latency_ns, "Measurement packet completed");
             }
             None => {
                 lost_packets += 1;
+                warn!(packet_num = i + 1, "Measurement packet lost or timed out");
             }
         }
 
         // Update progress
         progress.update(&latencies, start_time, i)?;
     }
+    
+    debug!(
+        packets_received = latencies.len(),
+        packets_lost = lost_packets,
+        "Measurement phase completed"
+    );
 
     // Final update and finish
     progress.final_update(&latencies, start_time)?;

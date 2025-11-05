@@ -3,6 +3,7 @@ use crate::client::error::Result;
 use crate::client::constants::PASS_THRESHOLD_MS;
 use colored::*;
 use std::time::Duration;
+use tracing::{debug, info, warn};
 
 /// Reporter for printing measurement results
 pub struct Reporter;
@@ -17,7 +18,14 @@ impl Reporter {
         elapsed: Duration,
         latencies: &[u64],
     ) -> Result<()> {
+        debug!(
+            packets_received = stats.count(),
+            packets_lost = lost_packets,
+            total_packets = total_packets,
+            "Printing measurement results"
+        );
         if stats.count() == 0 {
+            warn!("No successful measurements recorded");
             println!("{}\n", "No successful measurements recorded.".red());
             println!("{}", "✗ FAIL: No data to analyze".red().bold());
             return Ok(());
@@ -82,6 +90,14 @@ impl Reporter {
         };
         
         println!("{}", verdict);
+        
+        let passed = mean_ms < PASS_THRESHOLD_MS;
+        info!(
+            mean_latency_ms = mean_ms,
+            passed = passed,
+            "Results reported"
+        );
+        
         Ok(())
     }
 

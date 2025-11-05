@@ -1,6 +1,7 @@
 use clap::Parser;
 use std::time::Duration;
 use crate::client::error::{ClientError, Result};
+use tracing::debug;
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "synapse-client")]
@@ -35,12 +36,14 @@ impl Config {
     
     /// Validates the configuration values
     pub fn validate(&self) -> Result<()> {
+        debug!("Validating configuration");
         if self.packets == 0 {
             return Err(ClientError::Config("packets must be > 0".into()));
         }
         if self.timeout_ms == 0 {
             return Err(ClientError::Config("timeout must be > 0".into()));
         }
+        debug!("Configuration validated successfully");
         Ok(())
     }
 }

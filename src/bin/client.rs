@@ -1,10 +1,15 @@
-use synapse::client::{Config, NetworkSocket, UdpNetworkSocket, warmup_phase, measurement_phase, Statistics, Reporter};
-use synapse::client::Result;
+use synapse::client::{Config, NetworkSocket, UdpNetworkSocket, warmup_phase, measurement_phase, Statistics, Reporter, init_logging};
 use clap::Parser;
 use colored::*;
+use tracing::{info, error};
+use anyhow::{Context, Result};
 
 fn main() {
+    // Initialize structured logging
+    init_logging();
+    
     if let Err(e) = run() {
+        error!(error = %e, "Application failed");
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }
@@ -12,27 +17,56 @@ fn main() {
 
 fn run() -> Result<()> {
     let config = Config::parse();
-    config.validate()?;
+    config.validate()
+        .map_err(|e| anyhow::anyhow!("{}", e))
+        .with_context(|| "Failed to validate configuration")?;
+
+    info!(server = %config.server, packets = config.packets, "Starting Synapse client");
 
     // Create and configure the UDP socket
-    let mut socket = UdpNetworkSocket::bind("0.0.0.0:0")?;
-    socket.connect(&config.server)?;
-    socket.set_timeout(config.timeout())?;
+    let mut socket = UdpNetworkSocket::bind("0.0.0.0:0")
+        .map_err(|e| anyhow::anyhow!("{}", e))
+        .with_context(|| "Failed to bind UDP socket")?;
+    socket.connect(&config.server)
+        .map_err(|e| anyhow::anyhow!("{}", e))
+        .with_context(|| format!("Failed to connect to server at {}", config.server))?;
+    socket.set_timeout(config.timeout())
+        .map_err(|e| anyhow::anyhow!("{}", e))
+        .with_context(|| format!("Failed to set socket timeout to {}ms", config.timeout_ms))?;
 
     println!("{}", "Synapse Application Diagnostic Tool".bold());
     println!("Server: {}\n", config.server);
 
     // Warmup phase
-    warmup_phase(&mut socket, config.warmup)?;
+    info!(warmup_count = config.warmup, "Starting warmup phase");
+    warmup_phase(&mut socket, config.warmup)
+        .map_err(|e| anyhow::anyhow!("{}", e))
+        .with_context(|| format!("Warmup phase failed after {} packets", config.warmup))?;
+    info!("Warmup phase completed");
 
     // Measurement phase
-    let result = measurement_phase(&mut socket, config.packets, config.update)?;
+    info!(packet_count = config.packets, update_interval = config.update, "Starting measurement phase");
+    let result = measurement_phase(&mut socket, config.packets, config.update)
+        .map_err(|e| anyhow::anyhow!("{}", e))
+        .with_context(|| format!("Measurement phase failed after {} packets", config.packets))?;
+    info!(
+        packets_received = result.latencies.len(),
+        packets_lost = result.lost_packets,
+        elapsed_secs = result.elapsed.as_secs_f64(),
+        "Measurement phase completed"
+    );
 
     // Analysis and reporting
-    let stats = Statistics::new(&result.latencies)?;
+    info!("Calculating statistics");
+    let stats = Statistics::new(&result.latencies)
+        .map_err(|e| anyhow::anyhow!("{}", e))
+        .with_context(|| format!("Failed to calculate statistics from {} latency measurements", result.latencies.len()))?;
     let reporter = Reporter;
     
-    reporter.print_results(&stats, result.lost_packets, result.total_packets, result.elapsed, &result.latencies)?;
+    reporter.print_results(&stats, result.lost_packets, result.total_packets, result.elapsed, &result.latencies)
+        .map_err(|e| anyhow::anyhow!("{}", e))
+        .with_context(|| "Failed to print results")?;
     
+    info!("Results reported successfully");
     Ok(())
 }

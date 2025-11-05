@@ -178,6 +178,52 @@ cargo run --release --bin client -- --packets 1000
 
 **Note:** The release build uses aggressive optimizations (LTO, single codegen unit, panic abort) for maximum performance.
 
+## Logging
+
+Synapse uses structured logging for observability and debugging. Log levels are configurable via the `RUST_LOG` environment variable.
+
+### Usage Examples
+
+```bash
+# Default: Info level and above
+cargo run --release --bin client
+
+# Debug level: Shows detailed packet-by-packet information
+RUST_LOG=debug cargo run --release --bin client
+
+# Debug for synapse crate only (useful when using dependencies)
+RUST_LOG=synapse=debug cargo run --release --bin client
+
+# Warn level: Only warnings and errors
+RUST_LOG=warn cargo run --release --bin client
+
+# Trace level: Maximum verbosity (very verbose)
+RUST_LOG=trace cargo run --release --bin client
+```
+
+### Log Levels
+
+- **`error`**: Critical errors that cause the application to fail
+- **`warn`**: Warning conditions (e.g., packet loss, sequence mismatches)
+- **`info`**: Informational messages (default) - major phases and completion
+- **`debug`**: Detailed debugging information (packet operations, socket events)
+- **`trace`**: Very verbose tracing (most detailed)
+
+### Example Output
+
+With `RUST_LOG=debug`, you'll see detailed logs like:
+
+```
+2024-01-01T12:00:00.123Z INFO synapse: Starting Synapse client server=127.0.0.1:8080 packets=10000
+2024-01-01T12:00:00.124Z DEBUG synapse::client::socket: Binding UDP socket addr=0.0.0.0:0
+2024-01-01T12:00:00.125Z DEBUG synapse::client::socket: Socket bound successfully
+2024-01-01T12:00:00.126Z INFO synapse: Starting warmup phase warmup_count=200
+2024-01-01T12:00:00.150Z DEBUG synapse::client::measurement: Packet received successfully latency_ns=12500 sequence=0
+...
+```
+
+**Tip:** Use `RUST_LOG=debug` when troubleshooting connectivity issues or analyzing packet-level behavior.
+
 ## OS-Level Tuning (Recommended)
 
 For the most accurate measurements, apply these OS-level optimizations:

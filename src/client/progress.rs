@@ -4,6 +4,7 @@ use crate::client::error::{ClientError, Result};
 use crate::client::constants::*;
 use std::time::{Duration, Instant};
 use colored::*;
+use tracing::debug;
 
 /// Progress tracker with live statistics and OSI visualization
 pub struct ProgressTracker {
@@ -16,6 +17,7 @@ pub struct ProgressTracker {
 impl ProgressTracker {
     /// Create a new progress tracker
     pub fn new(packet_count: usize, update_interval: usize) -> Result<Self> {
+        debug!(packet_count = packet_count, update_interval = update_interval, "Creating progress tracker");
         let pb = ProgressBar::new(packet_count as u64);
         pb.set_style(
             ProgressStyle::with_template("{msg}\n{bar:40.cyan/blue} {pos:>7}/{len:7} [{elapsed_precise}]")

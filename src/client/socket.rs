@@ -3,6 +3,7 @@ use crate::client::constants::PACKET_SIZE;
 use crate::protocol::Packet;
 use std::net::UdpSocket;
 use std::time::Duration;
+use tracing::{debug, warn};
 
 /// Trait for network socket operations with packet abstraction
 pub trait NetworkSocket: Send + Sync {
@@ -17,6 +18,7 @@ pub trait NetworkSocket: Send + Sync {
 }
 
 /// UDP-based implementation of NetworkSocket
+#[derive(Debug)]
 pub struct UdpNetworkSocket {
     socket: UdpSocket,
 }
@@ -24,15 +26,25 @@ pub struct UdpNetworkSocket {
 impl UdpNetworkSocket {
     /// Bind to a local address
     pub fn bind(addr: &str) -> Result<Self> {
+        debug!(addr = addr, "Binding UDP socket");
         let socket = UdpSocket::bind(addr)
-            .map_err(|e| ClientError::Socket(format!("Failed to bind to {}: {}", addr, e)))?;
+            .map_err(|e| {
+                warn!(error = %e, "Failed to bind socket");
+                ClientError::Socket(format!("Failed to bind to {}: {}", addr, e))
+            })?;
+        debug!("Socket bound successfully");
         Ok(Self { socket })
     }
 
     /// Connect to a remote address
     pub fn connect(&self, addr: &str) -> Result<()> {
+        debug!(addr = addr, "Connecting UDP socket");
         self.socket.connect(addr)
-            .map_err(|e| ClientError::Socket(format!("Failed to connect to {}: {}", addr, e)))?;
+            .map_err(|e| {
+                warn!(error = %e, "Failed to connect socket");
+                ClientError::Socket(format!("Failed to connect to {}: {}", addr, e))
+            })?;
+        debug!("Socket connected successfully");
         Ok(())
     }
 }
@@ -40,20 +52,36 @@ impl UdpNetworkSocket {
 impl NetworkSocket for UdpNetworkSocket {
     fn send_packet(&self, packet: &Packet) -> Result<usize> {
         let buf = packet.encode();
-        self.socket.send(&buf)
-            .map_err(|e| ClientError::Io(e))
+        let bytes_sent = self.socket.send(&buf)
+            .map_err(|e| {
+                warn!(error = %e, "Failed to send packet");
+                ClientError::Io(e)
+            })?;
+        debug!(bytes_sent = bytes_sent, sequence = packet.sequence.0, "Packet sent");
+        Ok(bytes_sent)
     }
 
     fn recv_packet(&mut self) -> Result<Packet> {
         let mut buf = [0u8; PACKET_SIZE];
         let len = self.socket.recv(&mut buf)
-            .map_err(|e| ClientError::Io(e))?;
-        Packet::decode(&buf[..len])
+            .map_err(|e| {
+                debug!(error = %e, "Failed to receive packet");
+                ClientError::Io(e)
+            })?;
+        let packet = Packet::decode(&buf[..len])?;
+        debug!(sequence = packet.sequence.0, bytes_received = len, "Packet received");
+        Ok(packet)
     }
 
     fn set_timeout(&self, timeout: Duration) -> Result<()> {
+        debug!(timeout_ms = timeout.as_millis(), "Setting socket timeout");
         self.socket.set_read_timeout(Some(timeout))
-            .map_err(|e| ClientError::Socket(format!("Failed to set timeout: {}", e)))
+            .map_err(|e| {
+                warn!(error = %e, "Failed to set timeout");
+                ClientError::Socket(format!("Failed to set timeout: {}", e))
+            })?;
+        debug!("Timeout set successfully");
+        Ok(())
     }
 }
 

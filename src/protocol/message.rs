@@ -1,5 +1,6 @@
 use crate::client::error::{ClientError, Result};
 use crate::client::constants::PACKET_SIZE;
+use tracing::debug;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SequenceNumber(pub u64);
@@ -20,6 +21,7 @@ impl Packet {
 
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < PACKET_SIZE {
+            debug!(expected = PACKET_SIZE, actual = bytes.len(), "Invalid packet size");
             return Err(ClientError::Protocol(
                 format!("Invalid packet size: expected {}, got {}", PACKET_SIZE, bytes.len())
             ));
@@ -28,6 +30,8 @@ impl Packet {
         let mut buf = [0u8; PACKET_SIZE];
         buf.copy_from_slice(&bytes[..PACKET_SIZE]);
         let seq = u64::from_le_bytes(buf);
+        
+        debug!(sequence = seq, "Packet decoded successfully");
         
         Ok(Packet {
             sequence: SequenceNumber(seq),
