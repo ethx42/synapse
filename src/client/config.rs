@@ -1,6 +1,6 @@
+use crate::client::error::{ClientError, Result};
 use clap::Parser;
 use std::time::Duration;
-use crate::client::error::{ClientError, Result};
 use tracing::debug;
 
 #[derive(Parser, Debug, Clone)]
@@ -33,7 +33,7 @@ impl Config {
     pub fn timeout(&self) -> Duration {
         Duration::from_millis(self.timeout_ms)
     }
-    
+
     /// Validates the configuration values
     pub fn validate(&self) -> Result<()> {
         debug!("Validating configuration");
@@ -47,4 +47,3 @@ impl Config {
         Ok(())
     }
 }
-

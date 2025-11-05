@@ -3,7 +3,7 @@ use std::process;
 
 fn main() {
     let addr = "0.0.0.0:8080";
-    
+
     // Bind the UDP socket
     let socket = match UdpSocket::bind(addr) {
         Ok(s) => {
@@ -36,4 +36,3 @@ fn main() {
         }
     }
 }
-

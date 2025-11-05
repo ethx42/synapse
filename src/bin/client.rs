@@ -1,13 +1,16 @@
-use synapse::client::{Config, NetworkSocket, UdpNetworkSocket, warmup_phase, measurement_phase, Statistics, Reporter, init_logging};
+use anyhow::{Context, Result};
 use clap::Parser;
 use colored::*;
-use tracing::{info, error};
-use anyhow::{Context, Result};
+use synapse::client::{
+    init_logging, measurement_phase, warmup_phase, Config, NetworkSocket, Reporter, Statistics,
+    UdpNetworkSocket,
+};
+use tracing::{error, info};
 
 fn main() {
     // Initialize structured logging
     init_logging();
-    
+
     if let Err(e) = run() {
         error!(error = %e, "Application failed");
         eprintln!("Error: {}", e);
@@ -17,7 +20,8 @@ fn main() {
 
 fn run() -> Result<()> {
     let config = Config::parse();
-    config.validate()
+    config
+        .validate()
         .map_err(|e| anyhow::anyhow!("{}", e))
         .with_context(|| "Failed to validate configuration")?;
 
@@ -27,10 +31,12 @@ fn run() -> Result<()> {
     let mut socket = UdpNetworkSocket::bind("0.0.0.0:0")
         .map_err(|e| anyhow::anyhow!("{}", e))
         .with_context(|| "Failed to bind UDP socket")?;
-    socket.connect(&config.server)
+    socket
+        .connect(&config.server)
         .map_err(|e| anyhow::anyhow!("{}", e))
         .with_context(|| format!("Failed to connect to server at {}", config.server))?;
-    socket.set_timeout(config.timeout())
+    socket
+        .set_timeout(config.timeout())
         .map_err(|e| anyhow::anyhow!("{}", e))
         .with_context(|| format!("Failed to set socket timeout to {}ms", config.timeout_ms))?;
 
@@ -45,7 +51,11 @@ fn run() -> Result<()> {
     info!("Warmup phase completed");
 
     // Measurement phase
-    info!(packet_count = config.packets, update_interval = config.update, "Starting measurement phase");
+    info!(
+        packet_count = config.packets,
+        update_interval = config.update,
+        "Starting measurement phase"
+    );
     let result = measurement_phase(&mut socket, config.packets, config.update)
         .map_err(|e| anyhow::anyhow!("{}", e))
         .with_context(|| format!("Measurement phase failed after {} packets", config.packets))?;
@@ -60,13 +70,25 @@ fn run() -> Result<()> {
     info!("Calculating statistics");
     let stats = Statistics::new(&result.latencies)
         .map_err(|e| anyhow::anyhow!("{}", e))
-        .with_context(|| format!("Failed to calculate statistics from {} latency measurements", result.latencies.len()))?;
+        .with_context(|| {
+            format!(
+                "Failed to calculate statistics from {} latency measurements",
+                result.latencies.len()
+            )
+        })?;
     let reporter = Reporter;
-    
-    reporter.print_results(&stats, result.lost_packets, result.total_packets, result.elapsed, &result.latencies)
+
+    reporter
+        .print_results(
+            &stats,
+            result.lost_packets,
+            result.total_packets,
+            result.elapsed,
+            &result.latencies,
+        )
         .map_err(|e| anyhow::anyhow!("{}", e))
         .with_context(|| "Failed to print results")?;
-    
+
     info!("Results reported successfully");
     Ok(())
 }

@@ -1,7 +1,7 @@
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, fmt};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 /// Initialize structured logging with configurable log levels
-/// 
+///
 /// Log level can be controlled via the `RUST_LOG` environment variable.
 /// Examples:
 /// - `RUST_LOG=info` - Info level and above
@@ -10,17 +10,13 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 /// - `RUST_LOG=warn` - Warn level and above
 pub fn init_logging() {
     tracing_subscriber::registry()
-        .with(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info"))
-        )
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .with(
             fmt::layer()
                 .with_target(false)
                 .with_thread_ids(true)
                 .with_line_number(true)
-                .with_file(true)
+                .with_file(true),
         )
         .init();
 }
-

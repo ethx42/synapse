@@ -15,10 +15,11 @@ pub use config::Config;
 pub use constants::*;
 pub use error::{ClientError, Result};
 pub use logging::init_logging;
-pub use measurement::{Measurement, MeasurementResult, measure_single_packet, warmup_phase, measurement_phase};
+pub use measurement::{
+    measure_single_packet, measurement_phase, warmup_phase, Measurement, MeasurementResult,
+};
 pub use progress::ProgressTracker;
 pub use reporter::Reporter;
 pub use socket::{NetworkSocket, UdpNetworkSocket};
 pub use statistics::Statistics;
 pub use visualizer::OsiVisualizer;
-

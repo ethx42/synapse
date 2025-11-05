@@ -1,14 +1,18 @@
-use synapse::client::{Config, NetworkSocket, UdpNetworkSocket, warmup_phase, measurement_phase, Statistics};
-use synapse::client::Result;
 use std::net::UdpSocket;
 use std::thread;
 use std::time::Duration;
+use synapse::client::Result;
+use synapse::client::{
+    measurement_phase, warmup_phase, Config, NetworkSocket, Statistics, UdpNetworkSocket,
+};
 
 /// Test helper: Start a simple echo server
 fn start_test_server(port: u16) -> UdpSocket {
     let addr = format!("127.0.0.1:{}", port);
     let socket = UdpSocket::bind(&addr).expect("Failed to bind test server");
-    socket.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+    socket
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
     socket
 }
 
@@ -37,10 +41,10 @@ fn test_config_validation() {
         update: 10,
         timeout_ms: 100,
     };
-    
+
     // Should fail validation
     assert!(config.validate().is_err());
-    
+
     // Fix and should pass
     config.packets = 10;
     assert!(config.validate().is_ok());
@@ -55,7 +59,7 @@ fn test_config_timeout() {
         update: 5,
         timeout_ms: 500,
     };
-    
+
     let timeout = config.timeout();
     assert_eq!(timeout, Duration::from_millis(500));
 }
@@ -65,41 +69,41 @@ fn test_end_to_end_measurement() -> Result<()> {
     // Start test server on a random port
     let server_socket = start_test_server(0);
     let server_addr = server_socket.local_addr().unwrap();
-    
+
     // Start server in background thread
     let _server_handle = thread::spawn(move || {
         run_echo_server(server_socket);
     });
-    
+
     // Give server time to start
     thread::sleep(Duration::from_millis(100));
-    
+
     // Create client socket
     let mut client_socket = UdpNetworkSocket::bind("127.0.0.1:0")?;
     client_socket.connect(&format!("127.0.0.1:{}", server_addr.port()))?;
     client_socket.set_timeout(Duration::from_millis(1000))?;
-    
+
     // Run warmup phase
     warmup_phase(&mut client_socket, 5)?;
-    
+
     // Run measurement phase with small packet count
     let result = measurement_phase(&mut client_socket, 10, 5)?;
-    
+
     // Verify results
     assert!(result.total_packets == 10);
     assert!(result.latencies.len() + result.lost_packets == 10);
-    
+
     // Calculate statistics
     if !result.latencies.is_empty() {
         let stats = Statistics::new(&result.latencies)?;
         assert!(stats.count() > 0);
         assert!(stats.mean() > 0.0);
     }
-    
+
     // Clean up
     drop(client_socket);
     thread::sleep(Duration::from_millis(100));
-    
+
     Ok(())
 }
 
@@ -110,4 +114,3 @@ fn test_measurement_with_lost_packets() -> Result<()> {
     // For now, we'll skip this and rely on unit tests with mocks
     Ok(())
 }
-

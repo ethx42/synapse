@@ -1,6 +1,6 @@
-use hdrhistogram::Histogram;
 use crate::client::constants::*;
 use crate::client::error::{ClientError, Result};
+use hdrhistogram::Histogram;
 use tracing::{debug, warn};
 
 /// Statistics calculator using HDR histogram
@@ -14,7 +14,10 @@ pub struct Statistics {
 impl Statistics {
     /// Create a new Statistics instance from latency measurements
     pub fn new(latencies: &[u64]) -> Result<Self> {
-        debug!(sample_count = latencies.len(), "Creating statistics from latency measurements");
+        debug!(
+            sample_count = latencies.len(),
+            "Creating statistics from latency measurements"
+        );
         let mut hist = Histogram::<u64>::new_with_bounds(
             HISTOGRAM_LOW_BOUND_NS,
             HISTOGRAM_HIGH_BOUND_NS,
@@ -29,15 +32,15 @@ impl Statistics {
         for &latency in latencies {
             real_min = real_min.min(latency);
             real_max = real_max.max(latency);
-            
+
             let clamped = latency
                 .max(HISTOGRAM_LOW_BOUND_NS)
                 .min(HISTOGRAM_HIGH_BOUND_NS);
-            
+
             if latency != clamped {
                 clamped_count += 1;
             }
-            
+
             hist.record(clamped).map_err(|e| {
                 warn!(latency = latency, error = %e, "Failed to record latency");
                 ClientError::Measurement(format!("Failed to record latency: {}", e))
@@ -50,7 +53,7 @@ impl Statistics {
             real_max,
             clamped_count,
         };
-        
+
         if clamped_count > 0 {
             warn!(
                 clamped_count = clamped_count,
@@ -58,7 +61,7 @@ impl Statistics {
                 "Some latency values were clamped to histogram bounds"
             );
         }
-        
+
         debug!(
             min_ns = result.real_min,
             max_ns = result.real_max,
@@ -66,7 +69,7 @@ impl Statistics {
             clamped_count = clamped_count,
             "Statistics calculated successfully"
         );
-        
+
         Ok(result)
     }
 
@@ -109,7 +112,7 @@ mod tests {
     fn test_statistics_calculation() -> Result<()> {
         let latencies = vec![1000, 2000, 3000, 4000, 5000];
         let stats = Statistics::new(&latencies)?;
-        
+
         assert_eq!(stats.min(), 1000);
         assert_eq!(stats.max(), 5000);
         assert!(stats.mean() > 0.0);
@@ -117,4 +120,3 @@ mod tests {
         Ok(())
     }
 }
-

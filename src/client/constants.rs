@@ -29,4 +29,3 @@ pub const EXCELLENT_LATENCY_MS: f64 = 0.5;
 
 /// Acceptable latency threshold in milliseconds
 pub const ACCEPTABLE_LATENCY_MS: f64 = 1.0;
-
