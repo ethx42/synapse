@@ -4,7 +4,7 @@
 pub const PACKET_SIZE: usize = 8;
 
 /// Sample rate for OSI layer animation (animate every Nth packet)
-pub const OSI_ANIMATION_SAMPLE_RATE: usize = 100;
+pub const OSI_ANIMATION_SAMPLE_RATE: usize = 1;
 
 /// Progress bar tick interval in milliseconds
 pub const PROGRESS_TICK_INTERVAL_MS: u64 = 100;

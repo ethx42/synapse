@@ -16,7 +16,7 @@ pub struct Config {
     pub packets: usize,
 
     /// Number of warmup packets before the test
-    #[arg(long, default_value_t = 200)]
+    #[arg(long, default_value_t = 100000)]
     pub warmup: usize,
 
     /// Dashboard update interval (packets)

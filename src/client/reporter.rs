@@ -8,7 +8,150 @@ use tracing::{debug, info, warn};
 /// Reporter for printing measurement results
 pub struct Reporter;
 
+// Constants for histogram visualization
+const HISTOGRAM_BAR_WIDTH: usize = 30;
+const OUTLIER_THRESHOLD_US: f64 = 10_000.0;
+const EMPTY_BUCKET_SKIP_THRESHOLD: usize = 5;
+
+// Percentage thresholds for color coding
+const HIGH_PERCENTAGE_THRESHOLD: f64 = 50.0;
+const MEDIUM_PERCENTAGE_THRESHOLD: f64 = 10.0;
+
+// Percentage thresholds for formatting precision
+const LOW_PERCENTAGE_THRESHOLD: f64 = 0.1;
+const MEDIUM_PRECISION_THRESHOLD: f64 = 1.0;
+
+// Width for histogram labels (must be consistent for alignment)
+const LABEL_WIDTH: usize = 12;
+
 impl Reporter {
+    /// Renders a histogram bar character based on the count relative to the maximum count.
+    ///
+    /// Uses Unicode block characters to visually represent relative sizes:
+    /// - Full blocks (█) for bars that fill the width
+    /// - Partial blocks (▉▊▋▌▍▎▏) for very small values that would round to 0
+    ///   This ensures even tiny percentages are visible and differentiated.
+    ///
+    /// # Arguments
+    ///
+    /// * `count` - The count for this bucket
+    /// * `max_count` - The maximum count across all buckets (for scaling)
+    /// * `bar_width` - The maximum width of the bar in characters
+    ///
+    /// # Returns
+    ///
+    /// A string containing the bar characters, or empty string if count is 0
+    fn render_bar(count: usize, max_count: usize, bar_width: usize) -> String {
+        if count == 0 {
+            return String::new();
+        }
+
+        // Calculate bar length (both integer and fractional parts)
+        let bar_length_fractional = if max_count > 0 {
+            (count as f64 / max_count as f64) * bar_width as f64
+        } else {
+            0.0
+        };
+        let bar_length = bar_length_fractional as usize;
+
+        // Render bar based on calculated length
+        if bar_length >= bar_width {
+            // Full width bar
+            "█".repeat(bar_width)
+        } else if bar_length >= 2 {
+            // Multiple full blocks
+            "█".repeat(bar_length)
+        } else if bar_length >= 1 {
+            // Single half block
+            "▌".to_string()
+        } else {
+            // When bar_length rounds to 0, use fractional part to show relative size
+            // This ensures different buckets show different visual indicators
+            let fractional = bar_length_fractional.fract();
+            match fractional {
+                f if f >= 0.875 => "▉".to_string(), // Left seven-eighths block
+                f if f >= 0.75 => "▊".to_string(),  // Left three-quarters block
+                f if f >= 0.625 => "▋".to_string(), // Left five-eighths block
+                f if f >= 0.5 => "▌".to_string(),   // Left half block
+                f if f >= 0.375 => "▍".to_string(), // Left three-eighths block
+                f if f >= 0.25 => "▎".to_string(),  // Left one-quarter block
+                f if f >= 0.125 => "▏".to_string(), // Left one-eighth block
+                _ => "▏".to_string(),               // Very tiny - still show something
+            }
+        }
+    }
+
+    /// Formats a percentage value with appropriate precision based on magnitude.
+    ///
+    /// Smaller percentages get more decimal places to show meaningful differences:
+    /// - < 0.1%: 3 decimal places (e.g., "0.003%")
+    /// - < 1.0%: 2 decimal places (e.g., "0.34%")
+    /// - >= 1.0%: 1 decimal place (e.g., "69.2%")
+    ///
+    /// # Arguments
+    ///
+    /// * `percentage` - The percentage value to format
+    ///
+    /// # Returns
+    ///
+    /// A formatted string with 5 characters width (for alignment)
+    fn format_percentage(percentage: f64) -> String {
+        if percentage < LOW_PERCENTAGE_THRESHOLD {
+            format!("{:5.3}%", percentage)
+        } else if percentage < MEDIUM_PRECISION_THRESHOLD {
+            format!("{:5.2}%", percentage)
+        } else {
+            format!("{:5.1}%", percentage)
+        }
+    }
+
+    /// Formats a count value for display, using "k" suffix for thousands.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// assert_eq!(Reporter::format_count(100), "    100");
+    /// assert_eq!(Reporter::format_count(1000), "     1k");
+    /// assert_eq!(Reporter::format_count(5000), "     5k");
+    /// ```
+    fn format_count(count: usize) -> String {
+        if count >= 1000 {
+            format!("{:>6}k", count / 1000)
+        } else {
+            format!("{:>7}", count)
+        }
+    }
+
+    /// Returns a color-coded label based on the percentage value, padded to a fixed width.
+    ///
+    /// Color coding helps quickly identify performance characteristics:
+    /// - Green: > 50% (most packets fall in this range)
+    /// - Cyan: > 10% (significant portion)
+    /// - Normal: <= 10% (minor portion)
+    ///
+    /// The label is padded to `LABEL_WIDTH` characters before applying colors to ensure
+    /// consistent alignment when ANSI color codes are added.
+    ///
+    /// # Arguments
+    ///
+    /// * `label` - The label text to colorize
+    /// * `percentage` - The percentage value used to determine color
+    ///
+    /// # Returns
+    ///
+    /// A colorized string padded to the specified width
+    fn colorize_label(label: &str, percentage: f64) -> String {
+        // Pad the label first to ensure consistent width, then apply colors
+        let padded_label = format!("{:>width$}", label, width = LABEL_WIDTH);
+        if percentage > HIGH_PERCENTAGE_THRESHOLD {
+            padded_label.green().to_string()
+        } else if percentage > MEDIUM_PERCENTAGE_THRESHOLD {
+            padded_label.cyan().to_string()
+        } else {
+            padded_label.to_string()
+        }
+    }
+
     /// Print the complete results summary
     pub fn print_results(
         &self,
@@ -165,64 +308,28 @@ impl Reporter {
                 }
             }
 
-            if !found && latency_us >= 10000.0 {
+            if !found && latency_us >= OUTLIER_THRESHOLD_US {
                 outliers += 1;
             }
         }
 
         // Find max count for bar scaling
         let max_count = *bucket_counts.iter().max().unwrap_or(&1);
-        let bar_width = 30;
 
         // Print each bucket
         for (i, &(_, _, label)) in buckets.iter().enumerate() {
             let count = bucket_counts[i];
-            if count == 0 && i > 5 {
+            if count == 0 && i > EMPTY_BUCKET_SKIP_THRESHOLD {
                 continue; // Skip empty buckets beyond 100µs for cleaner output
             }
 
             let percentage = (count as f64 / total_packets as f64) * 100.0;
-
-            // Calculate bar length
-            let bar_length = if max_count > 0 {
-                ((count as f64 / max_count as f64) * bar_width as f64) as usize
-            } else {
-                0
-            };
-
-            // Use different characters for different bar lengths
-            let bar = if bar_length > 0 {
-                if bar_length >= bar_width {
-                    "█".repeat(bar_width)
-                } else if bar_length >= 2 {
-                    "█".repeat(bar_length)
-                } else {
-                    "▌".to_string()
-                }
-            } else {
-                "".to_string()
-            };
-
-            // Color code based on performance
-            let label_colored = if percentage > 50.0 {
-                label.green()
-            } else if percentage > 10.0 {
-                label.cyan()
-            } else {
-                label.normal()
-            };
-
-            // Use more precision for small percentages
-            let pct_str = if percentage < 0.1 {
-                format!("{:5.3}%", percentage)
-            } else if percentage < 1.0 {
-                format!("{:5.2}%", percentage)
-            } else {
-                format!("{:5.1}%", percentage)
-            };
+            let bar = Self::render_bar(count, max_count, HISTOGRAM_BAR_WIDTH);
+            let label_colored = Self::colorize_label(label, percentage);
+            let pct_str = Self::format_percentage(percentage);
 
             println!(
-                "  {:>12}:  {:30} {} ({:7} packets)",
+                "  {}:  {:30} {} ({:7} packets)",
                 label_colored,
                 bar,
                 pct_str,
@@ -234,19 +341,17 @@ impl Reporter {
         if outliers > 0 {
             let percentage = (outliers as f64 / total_packets as f64) * 100.0;
             let max_ms = max_latency as f64 / 1_000_000.0;
+            let outlier_bar = Self::render_bar(outliers, max_count, HISTOGRAM_BAR_WIDTH);
+            let pct_str = Self::format_percentage(percentage);
 
-            let pct_str = if percentage < 0.1 {
-                format!("{:5.3}%", percentage)
-            } else if percentage < 1.0 {
-                format!("{:5.2}%", percentage)
-            } else {
-                format!("{:5.1}%", percentage)
-            };
+            // Pad outlier label to match bucket label width
+            let outlier_label = format!("{:>width$}", ">10 ms", width = LABEL_WIDTH);
+            let outlier_label_colored = outlier_label.red().bold();
 
             println!(
-                "  {:>12}:  {:30} {} ({:7} packets) ← MAX: {:.1}ms",
-                ">10 ms".red().bold(),
-                "▌".repeat(1),
+                "  {}:  {:30} {} ({:7} packets) ← MAX: {:.1}ms",
+                outlier_label_colored,
+                outlier_bar,
                 pct_str,
                 Self::format_count(outliers),
                 max_ms
@@ -254,14 +359,6 @@ impl Reporter {
         }
 
         Ok(())
-    }
-
-    fn format_count(count: usize) -> String {
-        if count >= 1000 {
-            format!("{:>6}k", count / 1000)
-        } else {
-            format!("{:>7}", count)
-        }
     }
 }
 
