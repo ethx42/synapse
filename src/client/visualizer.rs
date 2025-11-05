@@ -153,14 +153,14 @@ fn render_osi_stack(osi_state: &OsiState) -> String {
 
     // Header - centered above stacks
     lines.push(format!(
-        "                 {}                  {}",
+        "          {}                  {}",
         "CLIENT".bold(),
         "SERVER".bold()
     ));
 
     // Layer 7
     lines.push(format!(
-        "         {}  {}",
+        "{}  {}",
         render_layer("L7", "APPLICATION", client_l7_active, l7_color),
         render_layer("L7", "APPLICATION", server_l7_active, l7_color)
     ));

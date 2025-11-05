@@ -13,6 +13,7 @@ pub struct ProgressTracker {
     last_update: Instant,
     update_interval: usize,
     last_stats_message: String,
+    last_metrics_lines: Vec<String>,
 }
 
 impl ProgressTracker {
@@ -41,6 +42,7 @@ impl ProgressTracker {
             last_update: Instant::now(),
             update_interval,
             last_stats_message: String::new(),
+            last_metrics_lines: Vec::new(),
         })
     }
 
@@ -91,29 +93,14 @@ impl ProgressTracker {
         let osi_viz = self.visualizer.render();
         let osi_lines: Vec<&str> = osi_viz.lines().collect();
 
-        // Reuse last stats message if available, otherwise just show OSI
-        if !self.last_stats_message.is_empty() {
-            // Parse last stats to extract metrics lines
-            let last_lines: Vec<&str> = self.last_stats_message.lines().collect();
-            let metrics_lines: Vec<String> = last_lines
-                .iter()
-                .take(4) // First 4 lines are metrics
-                .map(|s| {
-                    // Extract metric part (first 25 chars)
-                    if s.len() >= 25 {
-                        s[..25].to_string()
-                    } else {
-                        format!("{:<25}", s)
-                    }
-                })
-                .collect();
-
-            // Combine metrics with updated OSI visualization
+        // Reuse last metrics lines if available, otherwise just show OSI
+        if !self.last_metrics_lines.is_empty() {
+            // Combine cached metrics with updated OSI visualization
             let mut combined = Vec::new();
-            let max_lines = metrics_lines.len().max(osi_lines.len());
+            let max_lines = self.last_metrics_lines.len().max(osi_lines.len());
             for i in 0..max_lines {
-                let metric_part = if i < metrics_lines.len() {
-                    metrics_lines[i].clone()
+                let metric_part = if i < self.last_metrics_lines.len() {
+                    self.last_metrics_lines[i].clone()
                 } else {
                     " ".repeat(25)
                 };
@@ -195,12 +182,31 @@ impl ProgressTracker {
         let osi_lines: Vec<&str> = osi_viz.lines().collect();
 
         // Build combined display with metrics on left, OSI on right
+        // Calculate plain text lengths to ensure consistent width (25 chars visible)
+        let last_plain = format!("→ {:.3}ms", last_ms);
+        let mean_plain = format!("Mean: {:.3}ms", mean_ms);
+        let p99_plain = format!("P99: {:.3}ms", p99_ms);
+        let rate_plain = format!("Rate: {:.1}k pkt/s", rate / 1000.0);
+
+        // Build metrics with proper padding BEFORE combining with colored values
+        // This ensures each line is exactly 25 visible characters
         let metrics_lines = vec![
-            format!("→ {}ms", last_color),
-            format!("Mean: {}ms", mean_color),
-            format!("P99: {:.3}ms", p99_ms),
-            format!("Rate: {:.1}k pkt/s", rate / 1000.0),
+            format!(
+                "→ {}ms{}",
+                last_color,
+                " ".repeat(25_usize.saturating_sub(last_plain.len()))
+            ),
+            format!(
+                "Mean: {}ms{}",
+                mean_color,
+                " ".repeat(25_usize.saturating_sub(mean_plain.len()))
+            ),
+            format!("{:<25}", p99_plain),
+            format!("{:<25}", rate_plain),
         ];
+
+        // Cache the metrics lines for lightweight updates (avoids byte-slicing ANSI codes)
+        self.last_metrics_lines = metrics_lines.clone();
 
         let mut combined = Vec::new();
 
@@ -208,7 +214,8 @@ impl ProgressTracker {
         let max_lines = metrics_lines.len().max(osi_lines.len());
         for i in 0..max_lines {
             let metric_part = if i < metrics_lines.len() {
-                format!("{:<25}", metrics_lines[i])
+                // Use the pre-formatted metric line directly (already 25 chars wide)
+                metrics_lines[i].clone()
             } else {
                 " ".repeat(25)
             };
@@ -224,7 +231,7 @@ impl ProgressTracker {
 
         // Use indicatif's message field with newlines
         let msg = combined.join("\n");
-        // Cache the message for lightweight updates
+        // Cache the message for reference
         self.last_stats_message = msg.clone();
         self.pb.set_message(msg);
         Ok(())

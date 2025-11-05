@@ -280,6 +280,7 @@ impl Reporter {
     /// Print bucket distribution of latencies
     pub fn print_bucket_distribution(&self, latencies: &[u64], total_packets: usize) -> Result<()> {
         println!("Latency Distribution (packet count by range):");
+        println!();
 
         // Define buckets in microseconds
         let buckets: Vec<(f64, f64, &str)> = vec![
