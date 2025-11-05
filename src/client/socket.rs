@@ -60,6 +60,17 @@ impl NetworkSocket for UdpNetworkSocket {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mockall::mock;
+
+    mock! {
+        pub NetworkSocket {}
+        
+        impl NetworkSocket for NetworkSocket {
+            fn send_packet(&self, packet: &Packet) -> Result<usize>;
+            fn recv_packet(&mut self) -> Result<Packet>;
+            fn set_timeout(&self, timeout: Duration) -> Result<()>;
+        }
+    }
 
     #[test]
     fn test_udp_socket_bind() {
@@ -74,4 +85,7 @@ mod tests {
         Ok(())
     }
 }
+
+#[cfg(test)]
+pub use tests::MockNetworkSocket;
 

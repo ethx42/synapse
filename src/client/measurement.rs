@@ -129,3 +129,88 @@ pub fn measurement_phase<S: NetworkSocket>(
     })
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::client::socket::MockNetworkSocket;
+    use std::io::ErrorKind;
+
+    #[test]
+    fn test_measure_single_packet_success() -> Result<()> {
+        let mut mock_socket = MockNetworkSocket::new();
+        let seq = SequenceNumber(123);
+
+        mock_socket
+            .expect_send_packet()
+            .times(1)
+            .returning(|_| Ok(8));
+
+        mock_socket
+            .expect_recv_packet()
+            .times(1)
+            .returning(move || Ok(Packet::new(seq)));
+
+        let result = measure_single_packet(&mut mock_socket, seq)?;
+        assert!(result.is_some());
+        assert!(result.unwrap() > 0); // Some latency measured
+        Ok(())
+    }
+
+    #[test]
+    fn test_measure_single_packet_sequence_mismatch() -> Result<()> {
+        let mut mock_socket = MockNetworkSocket::new();
+        let seq = SequenceNumber(123);
+        let wrong_seq = SequenceNumber(456);
+
+        mock_socket
+            .expect_send_packet()
+            .times(1)
+            .returning(|_| Ok(8));
+
+        mock_socket
+            .expect_recv_packet()
+            .times(1)
+            .returning(move || Ok(Packet::new(wrong_seq)));
+
+        let result = measure_single_packet(&mut mock_socket, seq)?;
+        assert!(result.is_none()); // Sequence mismatch
+        Ok(())
+    }
+
+    #[test]
+    fn test_measure_single_packet_timeout() -> Result<()> {
+        let mut mock_socket = MockNetworkSocket::new();
+        let seq = SequenceNumber(123);
+
+        mock_socket
+            .expect_send_packet()
+            .times(1)
+            .returning(|_| Ok(8));
+
+        mock_socket
+            .expect_recv_packet()
+            .times(1)
+            .returning(|| {
+                Err(ClientError::Io(std::io::Error::from(ErrorKind::TimedOut)))
+            });
+
+        let result = measure_single_packet(&mut mock_socket, seq)?;
+        assert!(result.is_none()); // Timeout
+        Ok(())
+    }
+
+    #[test]
+    fn test_measure_single_packet_send_error() {
+        let mut mock_socket = MockNetworkSocket::new();
+        let seq = SequenceNumber(123);
+
+        mock_socket
+            .expect_send_packet()
+            .times(1)
+            .returning(|_| Err(ClientError::Io(std::io::Error::from(ErrorKind::ConnectionRefused))));
+
+        let result = measure_single_packet(&mut mock_socket, seq);
+        assert!(result.is_err());
+    }
+}
+

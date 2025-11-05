@@ -219,3 +219,50 @@ impl Reporter {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_reporter_print_results_empty() -> Result<()> {
+        let reporter = Reporter;
+        let stats = Statistics::new(&[])?;
+        
+        // Should handle empty latencies gracefully
+        reporter.print_results(&stats, 0, 10, Duration::from_secs(1), &[])?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_reporter_print_results_with_data() -> Result<()> {
+        let reporter = Reporter;
+        let latencies = vec![1000, 2000, 3000, 4000, 5000];
+        let stats = Statistics::new(&latencies)?;
+        
+        reporter.print_results(&stats, 0, 5, Duration::from_secs(1), &latencies)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_reporter_print_bucket_distribution() -> Result<()> {
+        let reporter = Reporter;
+        let latencies = vec![
+            10000,   // 10 µs
+            20000,   // 20 µs
+            50000,   // 50 µs
+            100000,  // 100 µs
+            500000,  // 500 µs
+        ];
+        
+        reporter.print_bucket_distribution(&latencies, 5)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_reporter_format_count() {
+        assert_eq!(Reporter::format_count(100), "    100");
+        assert_eq!(Reporter::format_count(1000), "     1k");
+        assert_eq!(Reporter::format_count(5000), "     5k");
+    }
+}
+

@@ -209,3 +209,64 @@ impl Default for OsiVisualizer {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_visualizer_new() {
+        let viz = OsiVisualizer::new();
+        assert!(!viz.render().is_empty());
+    }
+
+    #[test]
+    fn test_visualizer_should_update() {
+        let viz = OsiVisualizer::new();
+        // Should update every 100th packet (OSI_ANIMATION_SAMPLE_RATE)
+        assert!(viz.should_update(99)); // packet_index 99 = packet 100
+        assert!(!viz.should_update(98));
+        assert!(viz.should_update(199)); // packet_index 199 = packet 200
+    }
+
+    #[test]
+    fn test_visualizer_advance() {
+        let mut viz = OsiVisualizer::new();
+        let initial_render = viz.render();
+        
+        // Advance multiple times to ensure visualization changes
+        for _ in 0..5 {
+            viz.advance();
+        }
+        let after_render = viz.render();
+        // After advancing multiple times, the visualization should change
+        assert_ne!(initial_render, after_render);
+    }
+
+    #[test]
+    fn test_visualizer_default() {
+        let viz1 = OsiVisualizer::new();
+        let viz2 = OsiVisualizer::default();
+        assert_eq!(viz1.render(), viz2.render());
+    }
+
+    #[test]
+    fn test_packet_position_cycle() {
+        let mut pos = PacketPosition::ClientL7;
+        let start = pos;
+        
+        // Count positions: There are 22 positions in the cycle
+        // ClientL7 -> ClientL4 -> ClientL3 -> ClientL2 -> ClientL1 -> Network -> 
+        // ServerL1 -> ServerL2 -> ServerL3 -> ServerL4 -> ServerL7 -> 
+        // ReturnServerL7 -> ReturnServerL4 -> ReturnServerL3 -> ReturnServerL2 -> ReturnServerL1 -> 
+        // ReturnNetwork -> ReturnClientL1 -> ReturnClientL2 -> ReturnClientL3 -> ReturnClientL4 -> ReturnClientL7 -> ClientL7
+        
+        // Advance through all positions in the cycle
+        for _ in 0..22 {
+            pos = pos.next();
+        }
+        
+        // Should cycle back to start
+        assert_eq!(pos, start);
+    }
+}
+

@@ -4,7 +4,7 @@ use crate::client::constants::PACKET_SIZE;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SequenceNumber(pub u64);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Packet {
     pub sequence: SequenceNumber,
 }
@@ -60,6 +60,31 @@ mod tests {
         let encoded = packet.encode();
         let decoded = Packet::decode(&encoded).unwrap();
         assert_eq!(decoded.sequence, seq);
+    }
+}
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn test_packet_encode_decode_property(seq in 0u64..u64::MAX) {
+            let sequence = SequenceNumber(seq);
+            let packet = Packet::new(sequence);
+            let encoded = packet.encode();
+            let decoded = Packet::decode(&encoded).unwrap();
+            prop_assert_eq!(decoded.sequence, sequence);
+        }
+
+        #[test]
+        fn test_packet_encode_decode_roundtrip(seq in 0u64..u64::MAX) {
+            let original = Packet::new(SequenceNumber(seq));
+            let encoded = original.encode();
+            let decoded = Packet::decode(&encoded).unwrap();
+            prop_assert_eq!(original, decoded);
+        }
     }
 }
 

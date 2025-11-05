@@ -148,3 +148,45 @@ impl ProgressTracker {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_progress_tracker_new() -> Result<()> {
+        let tracker = ProgressTracker::new(100, 10)?;
+        // Should create successfully - verify by checking it can be updated
+        assert!(tracker.pb.length().unwrap() == 100);
+        Ok(())
+    }
+
+    #[test]
+    fn test_progress_tracker_update() -> Result<()> {
+        let mut tracker = ProgressTracker::new(100, 10)?;
+        let latencies = vec![1000, 2000, 3000];
+        let start_time = Instant::now();
+        
+        // Update should succeed
+        tracker.update(&latencies, start_time, 0)?;
+        assert_eq!(tracker.pb.position(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_progress_tracker_final_update() -> Result<()> {
+        let mut tracker = ProgressTracker::new(100, 10)?;
+        let latencies = vec![1000, 2000, 3000];
+        let start_time = Instant::now();
+        
+        tracker.final_update(&latencies, start_time)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_progress_tracker_finish() {
+        let mut tracker = ProgressTracker::new(100, 10).unwrap();
+        tracker.finish();
+        // Should complete without error
+    }
+}
+
