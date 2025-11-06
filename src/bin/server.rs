@@ -1,12 +1,13 @@
 use std::net::UdpSocket;
 use std::process;
+use std::time::{Duration, Instant};
 use synapse::server::ServerMonitor;
 
 fn main() {
     let addr = "0.0.0.0:8080";
 
     // Bind the UDP socket
-    let socket = match UdpSocket::bind(addr) {
+    let mut socket = match UdpSocket::bind(addr) {
         Ok(s) => {
             println!("Synapse server listening on {}", addr);
             s
@@ -16,6 +17,10 @@ fn main() {
             process::exit(1);
         }
     };
+
+    socket
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .expect("Failed to set read timeout");
 
     // Initialize server monitor (updates every 100ms for smooth display)
     let monitor = ServerMonitor::new(100);
@@ -32,14 +37,16 @@ fn main() {
     let mut connected = false;
     let mut batch_received = 0u64;
     let mut batch_sent = 0u64;
+    let mut last_activity = Instant::now();
     const BATCH_SIZE: u64 = 100;
+    const IDLE_DISCONNECT_MS: u64 = 200;
 
-    // Infinite loop: receive and immediately echo back
     loop {
         if !connected {
             match socket.recv_from(&mut buf) {
                 Ok((len, src)) => {
                     batch_received += 1;
+                    last_activity = Instant::now();
 
                     if let Err(e) = socket.connect(src) {
                         eprintln!("Failed to connect to {}: {}", src, e);
@@ -58,6 +65,8 @@ fn main() {
                         }
                     }
                 }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut => {}
                 Err(e) => {
                     counters.increment_error();
                     eprintln!("Failed to receive: {}", e);
@@ -67,8 +76,8 @@ fn main() {
             match socket.recv(&mut buf) {
                 Ok(len) => {
                     batch_received += 1;
+                    last_activity = Instant::now();
 
-                    // Immediately send back using connected socket
                     match socket.send(&buf[..len]) {
                         Ok(_) => {
                             batch_sent += 1;
@@ -89,8 +98,33 @@ fn main() {
                             }
                             counters.increment_error();
                             eprintln!("Failed to send: {}", e);
+
+                            drop(socket);
+                            socket = UdpSocket::bind(addr).expect("Failed to rebind socket");
+                            socket
+                                .set_read_timeout(Some(Duration::from_millis(100)))
+                                .expect("Failed to set read timeout");
                             connected = false;
                         }
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+                {
+                    if last_activity.elapsed().as_millis() >= IDLE_DISCONNECT_MS as u128 {
+                        if batch_received > 0 || batch_sent > 0 {
+                            counters.add_received(batch_received);
+                            counters.add_sent(batch_sent);
+                            batch_received = 0;
+                            batch_sent = 0;
+                        }
+
+                        drop(socket);
+                        socket = UdpSocket::bind(addr).expect("Failed to rebind socket");
+                        socket
+                            .set_read_timeout(Some(Duration::from_millis(100)))
+                            .expect("Failed to set read timeout");
+                        connected = false;
                     }
                 }
                 Err(e) => {
@@ -102,6 +136,12 @@ fn main() {
                     }
                     counters.increment_error();
                     eprintln!("Failed to receive: {}", e);
+
+                    drop(socket);
+                    socket = UdpSocket::bind(addr).expect("Failed to rebind socket");
+                    socket
+                        .set_read_timeout(Some(Duration::from_millis(100)))
+                        .expect("Failed to set read timeout");
                     connected = false;
                 }
             }
