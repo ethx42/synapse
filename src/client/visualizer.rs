@@ -215,7 +215,7 @@ impl OsiVisualizer {
 
     /// Check if the visualizer should update based on packet index
     pub fn should_update(&self, packet_index: usize) -> bool {
-        (packet_index + 1) % self.sample_rate == 0
+        (packet_index + 1).is_multiple_of(self.sample_rate)
     }
 
     /// Advance the visualization state

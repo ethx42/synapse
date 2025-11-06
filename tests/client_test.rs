@@ -19,16 +19,8 @@ fn start_test_server(port: u16) -> UdpSocket {
 /// Test helper: Echo server that responds to packets
 fn run_echo_server(socket: UdpSocket) {
     let mut buf = [0u8; 64];
-    loop {
-        match socket.recv_from(&mut buf) {
-            Ok((len, src)) => {
-                let _ = socket.send_to(&buf[..len], src);
-            }
-            Err(_) => {
-                // Timeout or error - exit loop
-                break;
-            }
-        }
+    while let Ok((len, src)) = socket.recv_from(&mut buf) {
+        let _ = socket.send_to(&buf[..len], src);
     }
 }
 

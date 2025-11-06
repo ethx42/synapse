@@ -88,6 +88,9 @@ impl NetworkSocket for UdpNetworkSocket {
 }
 
 #[cfg(test)]
+pub use tests::MockNetworkSocket;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use mockall::mock;
@@ -115,6 +118,3 @@ mod tests {
         Ok(())
     }
 }
-
-#[cfg(test)]
-pub use tests::MockNetworkSocket;

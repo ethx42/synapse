@@ -103,7 +103,7 @@ pub fn warmup_phase<S: NetworkSocket>(socket: &mut S, warmup_count: usize) -> Re
                 seq + 1,
                 warmup_count
             );
-            io::stdout().flush().map_err(|e| ClientError::Io(e))?;
+            io::stdout().flush().map_err(ClientError::Io)?;
             spinner_idx = (spinner_idx + 1) % spinner_chars.len();
         }
     }

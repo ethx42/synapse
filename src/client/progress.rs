@@ -68,7 +68,7 @@ impl ProgressTracker {
 
         // Update live stats less frequently to avoid performance overhead
         // Full stats update (with expensive calculations) happens at configured intervals
-        let should_update_stats = (packet_index + 1) % self.update_interval == 0
+        let should_update_stats = (packet_index + 1).is_multiple_of(self.update_interval)
             || self.last_update.elapsed().as_millis() > LIVE_STATS_UPDATE_INTERVAL_MS as u128;
 
         // Update display when animation advances OR when full stats update is due

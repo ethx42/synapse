@@ -33,9 +33,7 @@ impl Statistics {
             real_min = real_min.min(latency);
             real_max = real_max.max(latency);
 
-            let clamped = latency
-                .max(HISTOGRAM_LOW_BOUND_NS)
-                .min(HISTOGRAM_HIGH_BOUND_NS);
+            let clamped = latency.clamp(HISTOGRAM_LOW_BOUND_NS, HISTOGRAM_HIGH_BOUND_NS);
 
             if latency != clamped {
                 clamped_count += 1;
