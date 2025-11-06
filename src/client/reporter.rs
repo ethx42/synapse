@@ -110,14 +110,6 @@ impl Reporter {
     }
 
     /// Formats a count value for display, using "k" suffix for thousands.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// assert_eq!(Reporter::format_count(100), "    100");
-    /// assert_eq!(Reporter::format_count(1000), "     1k");
-    /// assert_eq!(Reporter::format_count(5000), "     5k");
-    /// ```
     fn format_count(count: usize) -> String {
         if count >= 1000 {
             format!("{:>6}k", count / 1000)

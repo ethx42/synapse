@@ -1,7 +1,7 @@
 //! Constants used throughout the client application
 
 /// Sample rate for OSI layer animation (animate every Nth packet)
-pub const OSI_ANIMATION_SAMPLE_RATE: usize = 1;
+pub const OSI_ANIMATION_SAMPLE_RATE: usize = 100;
 
 /// Progress bar tick interval in milliseconds
 pub const PROGRESS_TICK_INTERVAL_MS: u64 = 100;
@@ -26,3 +26,7 @@ pub const EXCELLENT_LATENCY_MS: f64 = 0.5;
 
 /// Acceptable latency threshold in milliseconds
 pub const ACCEPTABLE_LATENCY_MS: f64 = 1.0;
+
+/// Window size for live P99 calculation (limits sorting overhead)
+/// Live stats use only the most recent N packets for performance
+pub const LIVE_P99_WINDOW_SIZE: usize = 1000;

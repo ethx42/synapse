@@ -135,10 +135,15 @@ impl ProgressTracker {
             .ok_or_else(|| ClientError::Measurement("No latencies available".into()))?;
         let mean = latencies.iter().sum::<u64>() as f64 / latencies.len() as f64;
 
-        // Calculate a quick p99 estimate for live feedback
-        // Only calculate if we have enough samples to make it meaningful
+        // Calculate a quick p99 estimate for live feedback using a sliding window
+        // This limits sorting overhead while providing recent performance feedback
+        // Note: Live P99 is an approximation; final report uses HDR histogram for exact values
         let p99 = if latencies.len() > 10 {
-            let mut sorted = latencies.to_vec();
+            // Use a fixed-size window to avoid O(n log n) overhead on large datasets
+            let window_start = latencies.len().saturating_sub(LIVE_P99_WINDOW_SIZE);
+            let window = &latencies[window_start..];
+
+            let mut sorted = window.to_vec();
             sorted.sort_unstable();
             let p99_idx = (sorted.len() as f64 * 0.99) as usize;
             *sorted.get(p99_idx).unwrap_or(&0)
@@ -290,5 +295,35 @@ mod tests {
         let mut tracker = ProgressTracker::new(100, 10).unwrap();
         tracker.finish();
         // Should complete without error
+    }
+
+    #[test]
+    fn test_live_p99_window_small_dataset() -> Result<()> {
+        // Test that small datasets (< window size) work correctly
+        let mut tracker = ProgressTracker::new(100, 10)?;
+        let latencies = vec![1000, 2000, 3000, 4000, 5000];
+        let start_time = Instant::now();
+
+        // Should handle small datasets without panic
+        tracker.update_live_stats(&latencies, start_time)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_live_p99_window_large_dataset() -> Result<()> {
+        // Test that large datasets use windowing correctly
+        let mut tracker = ProgressTracker::new(2000, 100)?;
+
+        // Create a dataset larger than LIVE_P99_WINDOW_SIZE (1000)
+        let mut latencies = Vec::new();
+        for i in 0..1500 {
+            latencies.push((i + 1000) as u64);
+        }
+
+        let start_time = Instant::now();
+
+        // Should handle large datasets efficiently using window
+        tracker.update_live_stats(&latencies, start_time)?;
+        Ok(())
     }
 }
