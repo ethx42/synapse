@@ -1,0 +1,11 @@
+# Rust toolchain configuration for consistent builds across environments
+# This ensures all developers and CI use the same Rust version
+
+[toolchain]
+# Specify the Rust channel (stable, beta, nightly, or specific version)
+channel = "stable"
+# Ensure the toolchain is always installed
+profile = "default"
+# Specify components to install with the toolchain
+components = ["rustfmt", "clippy"]
+
