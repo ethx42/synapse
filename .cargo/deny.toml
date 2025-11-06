@@ -1,0 +1,55 @@
+# cargo-deny configuration for security and license compliance
+# Run with: cargo deny check
+
+[advisories]
+# Deny all known security vulnerabilities
+vulnerability = "deny"
+# Warn about unmaintained crates
+unmaintained = "warn"
+# Warn about unsound crates
+unsound = "warn"
+# Yanked crates should be denied
+yanked = "deny"
+# Don't complain about these advisories (add specific advisory IDs here if needed)
+ignore = []
+
+[licenses]
+# We're being permissive, but you can tighten this
+unlicensed = "deny"
+# Allow common permissive licenses
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+]
+# Deny copyleft licenses (adjust as needed)
+deny = [
+    "GPL-3.0",
+]
+# Warn about licenses that need review
+copyleft = "warn"
+# Confidence threshold for license detection
+confidence-threshold = 0.8
+
+[bans]
+# Deny multiple versions of the same crate
+multiple-versions = "warn"
+# Deny wildcard dependencies
+wildcards = "warn"
+# Allow certain crates to have multiple versions (if needed)
+skip = []
+# Deny specific crates
+deny = []
+
+[sources]
+# Deny crates from unknown registries
+unknown-registry = "deny"
+# Deny git sources (for supply chain security)
+unknown-git = "warn"
+# Allow these git sources
+allow-git = []
+
