@@ -66,7 +66,11 @@ pub fn measure_single_packet<S: NetworkSocket>(
 ///
 /// This phase populates ARP tables, warms CPU/OS caches, and establishes
 /// baseline network paths before measurement begins.
-pub fn warmup_phase<S: NetworkSocket>(socket: &mut S, warmup_count: usize) -> Result<()> {
+pub fn warmup_phase<S: NetworkSocket>(
+    socket: &mut S,
+    warmup_count: usize,
+    quiet: bool,
+) -> Result<()> {
     let spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
     let mut spinner_idx = 0;
     let mut successful_packets = 0usize;
@@ -95,8 +99,8 @@ pub fn warmup_phase<S: NetworkSocket>(socket: &mut S, warmup_count: usize) -> Re
             }
         }
 
-        // Update spinner every 10 packets for smooth animation
-        if seq % 10 == 0 {
+        // Update spinner every 10 packets for smooth animation (only if not in quiet mode)
+        if !quiet && seq % 10 == 0 {
             print!(
                 "\rWarming up {} ({}/{})",
                 spinner_chars[spinner_idx],
@@ -108,8 +112,10 @@ pub fn warmup_phase<S: NetworkSocket>(socket: &mut S, warmup_count: usize) -> Re
         }
     }
 
-    println!("\rWarming up ✓ ({}/{})", warmup_count, warmup_count);
-    println!();
+    if !quiet {
+        println!("\rWarming up ✓ ({}/{})", warmup_count, warmup_count);
+        println!();
+    }
     Ok(())
 }
 
@@ -118,6 +124,7 @@ pub fn measurement_phase<S: NetworkSocket>(
     socket: &mut S,
     packet_count: usize,
     update_interval: usize,
+    quiet: bool,
 ) -> Result<MeasurementResult> {
     // Pre-allocate vectors
     let mut latencies = Vec::with_capacity(packet_count);
@@ -125,8 +132,12 @@ pub fn measurement_phase<S: NetworkSocket>(
 
     let start_time = Instant::now();
 
-    // Create progress tracker
-    let mut progress = ProgressTracker::new(packet_count, update_interval)?;
+    // Create progress tracker only if not in quiet mode
+    let mut progress = if !quiet {
+        Some(ProgressTracker::new(packet_count, update_interval)?)
+    } else {
+        None
+    };
 
     for i in 0..packet_count {
         let sequence = SequenceNumber(i as u64);
@@ -157,8 +168,10 @@ pub fn measurement_phase<S: NetworkSocket>(
             }
         }
 
-        // Update progress
-        progress.update(&latencies, start_time, i)?;
+        // Update progress only if not in quiet mode
+        if let Some(ref mut p) = progress {
+            p.update(&latencies, start_time, i)?;
+        }
     }
 
     debug!(
@@ -167,10 +180,12 @@ pub fn measurement_phase<S: NetworkSocket>(
         "Measurement phase completed"
     );
 
-    // Final update and finish
-    progress.final_update(&latencies, start_time)?;
-    progress.finish();
-    println!(); // Add blank line for separation
+    // Final update and finish only if not in quiet mode
+    if let Some(ref mut p) = progress {
+        p.final_update(&latencies, start_time)?;
+        p.finish();
+        println!(); // Add blank line for separation
+    }
 
     let elapsed = start_time.elapsed();
     Ok(MeasurementResult {

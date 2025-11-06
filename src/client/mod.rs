@@ -14,7 +14,7 @@ pub mod visualizer;
 pub use config::Config;
 pub use constants::*;
 pub use error::{ClientError, Result};
-pub use logging::init_logging;
+pub use logging::{init_logging, init_logging_with_config};
 pub use measurement::{
     measure_single_packet, measurement_phase, warmup_phase, Measurement, MeasurementResult,
 };

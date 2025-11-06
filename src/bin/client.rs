@@ -2,29 +2,39 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use colored::*;
 use synapse::client::{
-    init_logging, measurement_phase, warmup_phase, Config, NetworkSocket, Reporter, Statistics,
-    UdpNetworkSocket,
+    init_logging_with_config, measurement_phase, warmup_phase, Config, NetworkSocket, Reporter,
+    Statistics, UdpNetworkSocket,
 };
 use tracing::{error, info};
 
 fn main() {
-    // Initialize structured logging
-    init_logging();
+    // Parse CLI arguments first
+    let config = Config::parse();
 
-    if let Err(e) = run() {
+    // Initialize structured logging with config options
+    init_logging_with_config(&config.log_level, config.is_json_format());
+
+    // Validate configuration
+    if let Err(e) = config.validate() {
+        error!(error = %e, "Invalid configuration");
+        eprintln!("Configuration error: {}", e);
+        std::process::exit(1);
+    }
+
+    if let Err(e) = run(config) {
         error!(error = %e, "Application failed");
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<()> {
-    let config = Config::parse();
-    config
-        .validate()
-        .context("Failed to validate configuration")?;
-
-    info!(server = %config.server, packets = config.packets, "Starting Synapse client");
+fn run(config: Config) -> Result<()> {
+    info!(
+        server = %config.server,
+        packets = config.packets,
+        quiet_mode = config.quiet,
+        "Starting Synapse client"
+    );
 
     // Create and configure the UDP socket
     let mut socket = UdpNetworkSocket::bind("0.0.0.0:0").context("Failed to bind UDP socket")?;
@@ -35,12 +45,15 @@ fn run() -> Result<()> {
         .set_timeout(config.timeout())
         .with_context(|| format!("Failed to set socket timeout to {}ms", config.timeout_ms))?;
 
-    println!("{}", "Synapse Application Diagnostic Tool".bold());
-    println!("Server: {}\n", config.server);
+    // Print header only if not in quiet mode
+    if !config.quiet {
+        println!("{}", "Synapse Application Diagnostic Tool".bold());
+        println!("Server: {}\n", config.server);
+    }
 
     // Warmup phase
     info!(warmup_count = config.warmup, "Starting warmup phase");
-    warmup_phase(&mut socket, config.warmup).context("Warmup phase failed")?;
+    warmup_phase(&mut socket, config.warmup, config.quiet).context("Warmup phase failed")?;
     info!("Warmup phase completed");
 
     // Measurement phase
@@ -49,7 +62,7 @@ fn run() -> Result<()> {
         update_interval = config.update,
         "Starting measurement phase"
     );
-    let result = measurement_phase(&mut socket, config.packets, config.update)
+    let result = measurement_phase(&mut socket, config.packets, config.update, config.quiet)
         .context("Measurement phase failed")?;
     info!(
         packets_received = result.latencies.len(),

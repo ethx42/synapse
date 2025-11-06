@@ -36,6 +36,9 @@ fn test_config_validation() {
         warmup: 10,
         update: 10,
         timeout_ms: 100,
+        quiet: false,
+        log_level: "info".to_string(),
+        log_format: "text".to_string(),
     };
     
     // Should fail validation
@@ -54,6 +57,9 @@ fn test_config_timeout() {
         warmup: 5,
         update: 5,
         timeout_ms: 500,
+        quiet: false,
+        log_level: "info".to_string(),
+        log_format: "text".to_string(),
     };
     
     let timeout = config.timeout();
@@ -79,11 +85,11 @@ fn test_end_to_end_measurement() -> Result<()> {
     client_socket.connect(&format!("127.0.0.1:{}", server_addr.port()))?;
     client_socket.set_timeout(Duration::from_millis(1000))?;
     
-    // Run warmup phase
-    warmup_phase(&mut client_socket, 5)?;
+    // Run warmup phase (quiet mode for tests)
+    warmup_phase(&mut client_socket, 5, true)?;
     
-    // Run measurement phase with small packet count
-    let result = measurement_phase(&mut client_socket, 10, 5)?;
+    // Run measurement phase with small packet count (quiet mode for tests)
+    let result = measurement_phase(&mut client_socket, 10, 5, true)?;
     
     // Verify results
     assert!(result.total_packets == 10);

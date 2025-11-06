@@ -1,35 +1,55 @@
 use anyhow::{Context, Result};
-use synapse::client::init_logging;
-use synapse::server::ServerMonitor;
+use clap::Parser;
+use synapse::client::init_logging_with_config;
+use synapse::server::{ServerConfig, ServerMonitor};
 use tracing::{error, info};
 use std::net::UdpSocket;
 
 fn main() {
-    // Initialize structured logging
-    init_logging();
+    // Parse CLI arguments
+    let config = ServerConfig::parse();
 
-    if let Err(e) = run() {
+    // Initialize structured logging with config options
+    init_logging_with_config(&config.log_level, config.is_json_format());
+
+    // Validate configuration
+    if let Err(e) = config.validate() {
+        error!(error = %e, "Invalid configuration");
+        eprintln!("Configuration error: {}", e);
+        std::process::exit(1);
+    }
+
+    if let Err(e) = run(config) {
         error!(error = %e, "Server failed");
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<()> {
-    let addr = "0.0.0.0:8080";
+fn run(config: ServerConfig) -> Result<()> {
+    let addr = config.address();
 
     // Bind the UDP socket
-    let socket = UdpSocket::bind(addr)
+    let socket = UdpSocket::bind(&addr)
         .with_context(|| format!("Failed to bind to {}", addr))?;
 
-    info!(address = addr, "Synapse server listening");
+    info!(
+        address = %addr,
+        update_interval_ms = config.update_interval,
+        quiet_mode = config.quiet,
+        "Synapse server listening"
+    );
 
-    // Initialize server monitor (updates every 100ms for smooth display)
-    let monitor = ServerMonitor::new(100);
+    // Initialize server monitor with configured update interval
+    let monitor = ServerMonitor::new(config.update_interval);
     let counters = monitor.counters();
 
-    // Start background display thread (non-blocking)
-    monitor.start_display();
+    // Start background display thread only if not in quiet mode
+    if !config.quiet {
+        monitor.start_display();
+    } else {
+        info!("Running in quiet mode (terminal UI disabled)");
+    }
 
     // Pre-allocate a single receive buffer outside the loop (64 bytes is sufficient)
     let mut buf = [0u8; 64];

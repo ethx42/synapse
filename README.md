@@ -170,35 +170,127 @@ cargo run --release --bin client -- --packets 1000
 
 #### Client Options
 
+The client supports flexible configuration via CLI flags, with sensible defaults for all options:
+
 - `--server <IP:PORT>`: Server address (default: `127.0.0.1:8080`)
 - `--packets <N>`: Number of packets to send (default: `10000`)
 - `--warmup <N>`: Number of warmup packets (default: `100000`)
 - `--update <N>`: Dashboard update interval (default: `100`)
 - `--timeout <ms>`: Socket timeout in milliseconds (default: `100`)
+- `--quiet`: Disable terminal UI (progress bars, spinners) for non-interactive environments
+- `--log-level <LEVEL>`: Log level - trace, debug, info, warn, error (default: `info`)
+- `--log-format <FORMAT>`: Log format - text or json (default: `text`)
+
+**Running with defaults** (no flags required):
+
+```bash
+cargo run --release --bin client
+# Connects to 127.0.0.1:8080 and sends 10000 packets
+```
+
+**Examples:**
+
+```bash
+# Custom server and packet count
+cargo run --release --bin client -- --server 192.168.1.10:9000 --packets 100000
+
+# Production monitoring with JSON logging
+cargo run --release --bin client -- --quiet --log-format json --packets 1000
+
+# Development with debug logging
+cargo run --release --bin client -- --log-level debug --packets 500
+
+# CI/CD automated testing
+cargo run --release --bin client -- --quiet --log-format json --log-level warn
+
+# High-precision long-running test
+cargo run --release --bin client -- --packets 1000000 --warmup 200000
+```
+
+#### Server Options
+
+The server supports flexible configuration via CLI flags, with sensible defaults for all options:
+
+- `--bind <ADDRESS>`: Bind address (default: `0.0.0.0`)
+- `--port <PORT>`: Bind port (default: `8080`)
+- `--update-interval <MS>`: Monitor update interval in milliseconds (default: `100`)
+- `--quiet`: Disable terminal UI for non-interactive environments (Docker, systemd, etc.)
+- `--log-level <LEVEL>`: Log level - trace, debug, info, warn, error (default: `info`)
+- `--log-format <FORMAT>`: Log format - text or json (default: `text`)
+
+**Running with defaults** (no flags required):
+
+```bash
+cargo run --release --bin server
+# Binds to 0.0.0.0:8080 with text logging at info level
+```
+
+**Examples:**
+
+```bash
+# Custom bind address and port
+cargo run --release --bin server -- --bind 192.168.1.10 --port 9000
+
+# Production deployment with JSON logging
+cargo run --release --bin server -- --quiet --log-format json --log-level warn
+
+# Development with debug logging
+cargo run --release --bin server -- --log-level debug
+
+# Docker/container deployment
+cargo run --release --bin server -- --quiet --log-format json
+
+# Multi-environment setup
+# Dev:     cargo run --release --bin server -- --bind 127.0.0.1 --port 8080
+# Staging: cargo run --release --bin server -- --bind 0.0.0.0 --port 8081 --log-level debug
+# Prod:    cargo run --release --bin server -- --quiet --log-format json --log-level info
+```
 
 **Note:** The release build uses aggressive optimizations (LTO, single codegen unit, panic abort) for maximum performance.
 
 ## Logging
 
-Synapse uses structured logging for observability and debugging. Log levels are configurable via the `RUST_LOG` environment variable.
+Synapse uses structured logging for observability and debugging. Both client and server support:
 
-### Usage Examples
+- **CLI flags**: `--log-level` and `--log-format` for direct configuration
+- **Environment variable**: `RUST_LOG` (takes precedence over CLI flags)
+
+### Client Logging Examples
 
 ```bash
-# Default: Info level and above
+# Default: Info level with text format
 cargo run --release --bin client
 
-# Debug level: Shows detailed packet-by-packet information
-RUST_LOG=debug cargo run --release --bin client
+# Debug level via CLI flag
+cargo run --release --bin client -- --log-level debug
 
-# Debug for synapse crate only (useful when using dependencies)
-RUST_LOG=synapse=debug cargo run --release --bin client
+# JSON format for log aggregation (Datadog, Splunk, ELK, etc.)
+cargo run --release --bin client -- --log-format json
 
-# Warn level: Only warnings and errors
-RUST_LOG=warn cargo run --release --bin client
+# Production setup: JSON logs with warn level
+cargo run --release --bin client -- --log-level warn --log-format json
 
-# Trace level: Maximum verbosity (very verbose)
+# Override via environment variable (takes precedence)
 RUST_LOG=trace cargo run --release --bin client
+```
+
+### Server Logging Examples
+
+```bash
+# Default: Info level with text format
+cargo run --release --bin server
+
+# Debug level via CLI flag
+cargo run --release --bin server -- --log-level debug
+
+# JSON format for log aggregation (Datadog, Splunk, ELK, etc.)
+cargo run --release --bin server -- --log-format json
+
+# Production setup: JSON logs with warn level
+cargo run --release --bin server -- --log-level warn --log-format json
+
+# Override via environment variable (takes precedence)
+RUST_LOG=trace cargo run --release --bin server
 ```
 
 ### Log Levels
