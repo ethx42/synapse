@@ -1,6 +1,8 @@
-use crate::client::constants::PACKET_SIZE;
-use crate::client::error::{ClientError, Result};
+use crate::protocol::error::{ProtocolError, Result};
 use tracing::debug;
+
+/// Size of a packet in bytes (8 bytes for u64 sequence number)
+pub const PACKET_SIZE: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SequenceNumber(pub u64);
@@ -26,11 +28,10 @@ impl Packet {
                 actual = bytes.len(),
                 "Invalid packet size"
             );
-            return Err(ClientError::Protocol(format!(
-                "Invalid packet size: expected {}, got {}",
-                PACKET_SIZE,
-                bytes.len()
-            )));
+            return Err(ProtocolError::InvalidPacketSize {
+                expected: PACKET_SIZE,
+                actual: bytes.len(),
+            });
         }
 
         let mut buf = [0u8; PACKET_SIZE];

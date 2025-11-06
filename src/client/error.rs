@@ -1,3 +1,4 @@
+use crate::protocol::error::ProtocolError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -16,6 +17,12 @@ pub enum ClientError {
 
     #[error("Socket error: {0}")]
     Socket(String),
+}
+
+impl From<ProtocolError> for ClientError {
+    fn from(err: ProtocolError) -> Self {
+        ClientError::Protocol(err.to_string())
+    }
 }
 
 pub type Result<T> = std::result::Result<T, ClientError>;

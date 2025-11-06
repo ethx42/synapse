@@ -172,7 +172,7 @@ cargo run --release --bin client -- --packets 1000
 
 - `--server <IP:PORT>`: Server address (default: `127.0.0.1:8080`)
 - `--packets <N>`: Number of packets to send (default: `10000`)
-- `--warmup <N>`: Number of warmup packets (default: `200`)
+- `--warmup <N>`: Number of warmup packets (default: `100000`)
 - `--update <N>`: Dashboard update interval (default: `100`)
 - `--timeout <ms>`: Socket timeout in milliseconds (default: `100`)
 
@@ -217,7 +217,7 @@ With `RUST_LOG=debug`, you'll see detailed logs like:
 2024-01-01T12:00:00.123Z INFO synapse: Starting Synapse client server=127.0.0.1:8080 packets=10000
 2024-01-01T12:00:00.124Z DEBUG synapse::client::socket: Binding UDP socket addr=0.0.0.0:0
 2024-01-01T12:00:00.125Z DEBUG synapse::client::socket: Socket bound successfully
-2024-01-01T12:00:00.126Z INFO synapse: Starting warmup phase warmup_count=200
+2024-01-01T12:00:00.126Z INFO synapse: Starting warmup phase warmup_count=100000
 2024-01-01T12:00:00.150Z DEBUG synapse::client::measurement: Packet received successfully latency_ns=12500 sequence=0
 ...
 ```
@@ -291,7 +291,7 @@ sudo chrt -f 99 ./target/release/client
 While the test is running, you'll see a real-time display that updates every few hundred milliseconds, showing both performance metrics and a live visualization of packet flow through the OSI layers:
 
 ```
-Warming up ✓ (200/200)
+Warming up ✓ (1000/1000)
 
 → 0.039ms                CLIENT                    SERVER
 Mean: 0.022ms            ┌──────────────────────┐  ┌──────────────────────┐

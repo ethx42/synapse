@@ -1,6 +1,5 @@
-use crate::client::constants::PACKET_SIZE;
 use crate::client::error::{ClientError, Result};
-use crate::protocol::Packet;
+use crate::protocol::{Packet, PACKET_SIZE};
 use std::net::UdpSocket;
 use std::time::Duration;
 use tracing::{debug, warn};

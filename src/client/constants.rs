@@ -1,8 +1,5 @@
 //! Constants used throughout the client application
 
-/// Size of a packet in bytes
-pub const PACKET_SIZE: usize = 8;
-
 /// Sample rate for OSI layer animation (animate every Nth packet)
 pub const OSI_ANIMATION_SAMPLE_RATE: usize = 1;
 
