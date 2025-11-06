@@ -40,6 +40,7 @@ fn test_config_validation() {
         warmup: 10,
         update: 10,
         timeout_ms: 100,
+        cpu_affinity: None,
     };
 
     // Should fail validation
@@ -58,6 +59,7 @@ fn test_config_timeout() {
         warmup: 5,
         update: 5,
         timeout_ms: 500,
+        cpu_affinity: None,
     };
 
     let timeout = config.timeout();

@@ -26,6 +26,9 @@ pub struct Config {
     /// Socket read timeout in milliseconds
     #[arg(long, default_value_t = 100)]
     pub timeout_ms: u64,
+
+    #[arg(long)]
+    pub cpu_affinity: Option<usize>,
 }
 
 impl Config {

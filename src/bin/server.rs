@@ -29,28 +29,81 @@ fn main() {
 
     println!("Ready to echo packets...");
 
+    let mut connected = false;
+    let mut batch_received = 0u64;
+    let mut batch_sent = 0u64;
+    const BATCH_SIZE: u64 = 100;
+
     // Infinite loop: receive and immediately echo back
     loop {
-        match socket.recv_from(&mut buf) {
-            Ok((len, src)) => {
-                // Increment received counter (atomic, lock-free, minimal overhead)
-                counters.increment_received();
+        if !connected {
+            match socket.recv_from(&mut buf) {
+                Ok((len, src)) => {
+                    batch_received += 1;
 
-                // Immediately send back the exact same payload
-                match socket.send_to(&buf[..len], src) {
-                    Ok(_) => {
-                        // Increment sent counter (atomic, lock-free, minimal overhead)
-                        counters.increment_sent();
-                    }
-                    Err(e) => {
+                    if let Err(e) = socket.connect(src) {
+                        eprintln!("Failed to connect to {}: {}", src, e);
                         counters.increment_error();
-                        eprintln!("Failed to send to {}: {}", src, e);
+                        continue;
+                    }
+                    connected = true;
+
+                    match socket.send(&buf[..len]) {
+                        Ok(_) => {
+                            batch_sent += 1;
+                        }
+                        Err(e) => {
+                            counters.increment_error();
+                            eprintln!("Failed to send: {}", e);
+                        }
                     }
                 }
+                Err(e) => {
+                    counters.increment_error();
+                    eprintln!("Failed to receive: {}", e);
+                }
             }
-            Err(e) => {
-                counters.increment_error();
-                eprintln!("Failed to receive: {}", e);
+        } else {
+            match socket.recv(&mut buf) {
+                Ok(len) => {
+                    batch_received += 1;
+
+                    // Immediately send back using connected socket
+                    match socket.send(&buf[..len]) {
+                        Ok(_) => {
+                            batch_sent += 1;
+
+                            if batch_sent >= BATCH_SIZE {
+                                counters.add_received(batch_received);
+                                counters.add_sent(batch_sent);
+                                batch_received = 0;
+                                batch_sent = 0;
+                            }
+                        }
+                        Err(e) => {
+                            if batch_received > 0 || batch_sent > 0 {
+                                counters.add_received(batch_received);
+                                counters.add_sent(batch_sent);
+                                batch_received = 0;
+                                batch_sent = 0;
+                            }
+                            counters.increment_error();
+                            eprintln!("Failed to send: {}", e);
+                            connected = false;
+                        }
+                    }
+                }
+                Err(e) => {
+                    if batch_received > 0 || batch_sent > 0 {
+                        counters.add_received(batch_received);
+                        counters.add_sent(batch_sent);
+                        batch_received = 0;
+                        batch_sent = 0;
+                    }
+                    counters.increment_error();
+                    eprintln!("Failed to receive: {}", e);
+                    connected = false;
+                }
             }
         }
     }

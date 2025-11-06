@@ -220,6 +220,16 @@ impl ServerCounters {
     pub fn increment_error(&self) {
         self.errors.fetch_add(1, Ordering::Relaxed);
     }
+
+    #[inline]
+    pub fn add_received(&self, count: u64) {
+        self.packets_received.fetch_add(count, Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn add_sent(&self, count: u64) {
+        self.packets_sent.fetch_add(count, Ordering::Relaxed);
+    }
 }
 
 /// Final server statistics.

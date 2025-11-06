@@ -21,7 +21,7 @@ hdrhistogram = "7.5"
 indicatif = "0.17"
 colored = "2.1"
 thiserror = "1.0"
-tracing = "0.1"
+tracing = { version = "0.1", features = ["max_level_info", "release_max_level_warn"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 anyhow = "1.0"
 

@@ -21,6 +21,7 @@ pub trait NetworkSocket: Send + Sync {
 #[derive(Debug)]
 pub struct UdpNetworkSocket {
     socket: UdpSocket,
+    recv_buf: [u8; PACKET_SIZE],
 }
 
 impl UdpNetworkSocket {
@@ -32,7 +33,10 @@ impl UdpNetworkSocket {
             ClientError::Socket(format!("Failed to bind to {}: {}", addr, e))
         })?;
         debug!("Socket bound successfully");
-        Ok(Self { socket })
+        Ok(Self {
+            socket,
+            recv_buf: [0u8; PACKET_SIZE],
+        })
     }
 
     /// Connect to a remote address
@@ -63,12 +67,11 @@ impl NetworkSocket for UdpNetworkSocket {
     }
 
     fn recv_packet(&mut self) -> Result<Packet> {
-        let mut buf = [0u8; PACKET_SIZE];
-        let len = self.socket.recv(&mut buf).map_err(|e| {
+        let len = self.socket.recv(&mut self.recv_buf).map_err(|e| {
             debug!(error = %e, "Failed to receive packet");
             ClientError::Io(e)
         })?;
-        let packet = Packet::decode(&buf[..len])?;
+        let packet = Packet::decode(&self.recv_buf[..len])?;
         debug!(
             sequence = packet.sequence.0,
             bytes_received = len,
