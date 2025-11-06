@@ -27,9 +27,9 @@ This is crucial: the network may be fast, but the application might be slow due 
 
 ### Design Principles
 
-- **UDP**: Minimal overhead, no connection ceremony
-- **Zero-allocation**: Server echoes packets without memory allocations
-- **Blocking I/O**: Single-focused execution, no async runtime overhead
+- **UDP**: Minimal overhead. The server uses a connected-UDP fast path after the first packet (no handshake; it's a local kernel association for faster recv/send)
+- **Zero-allocation hot path**: After startup, the echo path reuses fixed buffers and avoids per-packet allocations
+- **Blocking I/O**: Single-threaded, blocking operations with no async runtime overhead
 
 ### The Verdict
 
@@ -144,6 +144,26 @@ To run a quick test with fewer packets:
 cargo run --release --bin client -- --packets 1000
 ```
 
+### Server Fast Path and Sequential Runs
+
+The server uses performance optimizations that affect how it handles multiple client runs:
+
+**Connected-UDP Fast Path:**
+- After receiving the first packet, the server calls `connect()` on its UDP socket and switches to `recv()`/`send()` to eliminate per-packet address handling overhead
+- This is a local kernel association (no network handshake) that improves performance
+- While connected, the kernel only accepts packets from that specific peer address
+- Packets from other addresses may be rejected with "Connection refused" (ICMP port unreachable)
+
+**Automatic Idle Disconnect:**
+- The server automatically disconnects when idle: 100ms read timeout + 200ms idle threshold
+- Effective turnaround is typically ~200-300ms after the last packet before the server accepts a new client
+- If you run the client again immediately after a test, wait a short moment (>300ms) before starting the next run
+
+**Limitations:**
+- Multiple concurrent clients are not supported in the fast path
+- The server is optimized for a single active client stream at a time
+- For production multi-client scenarios, the fast path would need to be disabled or redesigned
+
 ### Common Issues and Solutions
 
 #### "command not found: cargo"
@@ -168,37 +188,44 @@ cargo run --release --bin client -- --packets 1000
 - On Linux/macOS, some OS tuning commands require `sudo`
 - The basic functionality doesn't require sudo - only advanced tuning does
 
+#### "Connection refused" on second client run
+
+- **Cause**: The server uses a connected-UDP fast path and remains connected to the previous client for a short time after it finishes
+- **Fix**: Wait ~300ms after a run before starting the next client, or ensure the server has completed an idle cycle. The server auto-disconnects after a short idle period (100ms read timeout + 200ms idle threshold)
+- **OS note**: Error codes may differ by OS (e.g., error 61 on macOS, error 111 on Linux)
+
 #### Client Options
 
 - `--server <IP:PORT>`: Server address (default: `127.0.0.1:8080`)
 - `--packets <N>`: Number of packets to send (default: `10000`)
 - `--warmup <N>`: Number of warmup packets (default: `200`)
-- `--update <N>`: Dashboard update interval (default: `100`)
+- `--update <N>`: Dashboard update interval (default: `100`). Larger values reduce dashboard updates and lower measurement overhead when benchmarking for minimal latency
 - `--timeout <ms>`: Socket timeout in milliseconds (default: `100`)
 
-**Note:** The release build uses aggressive optimizations (LTO, single codegen unit, panic abort) for maximum performance.
+**Note:** Release builds enable LTO=fat and target-cpu=native via `.cargo/config.toml` for maximum performance on your CPU. Warning: binaries may not be portable across different CPUs. The Cargo.toml profile also sets codegen-units=1 and panic=abort for additional optimization.
 
 ## Logging
 
 Synapse uses structured logging for observability and debugging. Log levels are configurable via the `RUST_LOG` environment variable.
 
+**Important:** Release builds use compile-time log level limits (`release_max_level_warn`). This means `debug!` and `trace!` logs are compiled out in release builds for maximum performance. Use a dev build (omit `--release`) if you need debug/trace output, or adjust Cargo features.
+
 ### Usage Examples
 
 ```bash
-# Default: Info level and above
+# Dev build (debug logs visible):
+cargo run --bin client
+RUST_LOG=debug cargo run --bin client
+
+# Release build (debug/trace not available by default):
 cargo run --release --bin client
-
-# Debug level: Shows detailed packet-by-packet information
-RUST_LOG=debug cargo run --release --bin client
-
-# Debug for synapse crate only (useful when using dependencies)
-RUST_LOG=synapse=debug cargo run --release --bin client
-
-# Warn level: Only warnings and errors
 RUST_LOG=warn cargo run --release --bin client
 
-# Trace level: Maximum verbosity (very verbose)
-RUST_LOG=trace cargo run --release --bin client
+# For synapse crate only (useful when using dependencies):
+RUST_LOG=synapse=info cargo run --release --bin client
+
+# Note: RUST_LOG=debug has no effect in release builds due to compile-time limits
+# Use dev builds for debug/trace logging
 ```
 
 ### Log Levels
@@ -227,6 +254,34 @@ With `RUST_LOG=debug`, you'll see detailed logs like:
 ## OS-Level Tuning (Recommended)
 
 For the most accurate measurements, apply these OS-level optimizations:
+
+### Benchmarking for Sub-10µs Latency
+
+To achieve the lowest possible latency measurements, minimize all overhead:
+
+**Disable UI overhead during measurement:**
+```bash
+RUST_LOG=off cargo run --release --bin client -- --server 127.0.0.1:8080 --packets 400000 --update 100000000
+```
+
+**Pin processes to specific CPU cores:**
+```bash
+# Linux - use taskset
+taskset -c 2 cargo run --release --bin server &
+taskset -c 3 cargo run --release --bin client -- --server 127.0.0.1:8080 --packets 400000 --update 100000000
+```
+
+**Set CPU governor to performance (Linux):**
+```bash
+sudo cpupower frequency-set -g performance
+```
+
+**Important notes:**
+- The real-time dashboard and logging can significantly inflate mean latency measurements
+- For clean benchmarks, use `RUST_LOG=off` and a very large `--update` interval
+- The minimum latency values show the system's true capability; mean latency includes UI overhead
+- Test results with UI enabled (default settings) typically show 50-60µs mean on localhost
+- With UI disabled and CPU pinning, sub-10µs mean latency may be achievable on high-performance systems
 
 ### CPU Governor
 
