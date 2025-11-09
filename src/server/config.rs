@@ -7,7 +7,7 @@ use tracing::debug;
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "synapse-server")]
-#[command(about = "High-performance UDP echo server for application diagnostics")]
+#[command(about = "High-performance TCP echo server for application diagnostics")]
 pub struct ServerConfig {
     /// Bind address
     #[arg(long, default_value = "0.0.0.0")]

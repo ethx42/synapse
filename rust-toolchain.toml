@@ -9,3 +9,4 @@ profile = "default"
 # Specify components to install with the toolchain
 components = ["rustfmt", "clippy"]
 
+

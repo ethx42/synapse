@@ -27,7 +27,7 @@ This is crucial: the network may be fast, but the application might be slow due 
 
 ### Design Principles
 
-- **UDP**: Minimal overhead, no connection ceremony
+- **TCP**: Reliable connection-oriented protocol for guaranteed delivery
 - **Zero-allocation**: Server echoes packets without memory allocations
 - **Blocking I/O**: Single-focused execution, no async runtime overhead
 
@@ -307,8 +307,8 @@ With `RUST_LOG=debug`, you'll see detailed logs like:
 
 ```
 2024-01-01T12:00:00.123Z INFO synapse: Starting Synapse client server=127.0.0.1:8080 packets=10000
-2024-01-01T12:00:00.124Z DEBUG synapse::client::socket: Binding UDP socket addr=0.0.0.0:0
-2024-01-01T12:00:00.125Z DEBUG synapse::client::socket: Socket bound successfully
+2024-01-01T12:00:00.124Z DEBUG synapse::client::socket: Connecting TCP stream addr=127.0.0.1:8080
+2024-01-01T12:00:00.125Z DEBUG synapse::client::socket: TCP stream connected successfully
 2024-01-01T12:00:00.126Z INFO synapse: Starting warmup phase warmup_count=100000
 2024-01-01T12:00:00.150Z DEBUG synapse::client::measurement: Packet received successfully latency_ns=12500 sequence=0
 ...
@@ -348,7 +348,7 @@ taskset -c 1 ./target/release/client
 ### Network Interface Tuning (Linux)
 
 ```bash
-# Increase UDP buffer sizes
+# Increase TCP buffer sizes
 sudo sysctl -w net.core.rmem_max=26214400
 sudo sysctl -w net.core.wmem_max=26214400
 sudo sysctl -w net.core.rmem_default=26214400
@@ -436,7 +436,7 @@ Rate: 31.1k pkt/s        ├─────────────────�
   - Layer 1 (Physical): Red → Bright red when active
 - **Animation flow**: Shows conceptual journey—client stack (descending) → network → server stack (ascending) → return path
 - **Sampling**: Animation advances every 100th packet to remain human-perceivable at high throughput
-- **Note**: Layers 5 (Session) and 6 (Presentation) are omitted because UDP is connectionless and uses raw bytes
+- **Note**: Layers 5 (Session) and 6 (Presentation) are omitted because we use raw bytes for minimal protocol overhead
 
 ### Final Results Summary
 
@@ -493,7 +493,7 @@ This captures the full application stack, including processing overhead, schedul
 
 ### OSI Model Layers
 
-Synapse's code operates at **Layer 7 (Application)** and **Layer 4 (Transport/UDP)**, bypassing Layers 5-6 since UDP is connectionless and uses raw bytes.
+Synapse's code operates at **Layer 7 (Application)** and **Layer 4 (Transport/TCP)**, bypassing Layers 5-6 since we use raw bytes for minimal overhead.
 
 However, the **latency measurement captures the complete journey** through all active OSI layers (7→4→3→2→1→network→1→2→3→4→7). The OS kernel handles Layers 3-1, but their processing time is included in the round-trip measurement.
 
@@ -508,7 +508,7 @@ This means Synapse measures full application-to-application latency, including a
 
 ### Message Format
 
-Minimal UDP protocol (8 bytes per packet):
+Minimal TCP protocol (8 bytes per packet):
 
 - **Client → Server**: 8-byte sequence number (u64, little-endian: 0, 1, 2, ...)
 - **Server → Client**: Echo response (same 8 bytes)
@@ -518,7 +518,7 @@ The client validates the echoed sequence matches. Zero serialization overhead, n
 ### Limitations
 
 - Single-threaded design (measures single-flow latency)
-- UDP only (no TCP support)
+- TCP only (connection-oriented protocol)
 - Loopback and local network optimized (WAN latency will be higher)
 
 ## License
