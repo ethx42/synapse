@@ -32,7 +32,9 @@ impl TcpNetworkSocket {
             ClientError::Socket(format!("Failed to connect to {}: {}", addr, e))
         })?;
         debug!("TCP stream connected successfully");
-        Ok(Self { stream: Mutex::new(stream) })
+        Ok(Self {
+            stream: Mutex::new(stream),
+        })
     }
 }
 
@@ -43,7 +45,7 @@ impl NetworkSocket for TcpNetworkSocket {
             warn!(error = %e, "Failed to lock stream");
             ClientError::Socket(format!("Failed to lock stream: {}", e))
         })?;
-        
+
         // TCP is stream-based, so we must use write_all to ensure all bytes are sent
         stream.write_all(&buf).map_err(|e| {
             warn!(error = %e, "Failed to send packet");
@@ -67,13 +69,13 @@ impl NetworkSocket for TcpNetworkSocket {
             warn!(error = %e, "Failed to lock stream");
             ClientError::Socket(format!("Failed to lock stream: {}", e))
         })?;
-        
+
         // TCP is stream-based, so we must use read_exact to read exactly PACKET_SIZE bytes
         stream.read_exact(&mut buf).map_err(|e| {
             debug!(error = %e, "Failed to receive packet");
             ClientError::Io(e)
         })?;
-        
+
         let packet = Packet::decode(&buf)?;
         debug!(
             sequence = packet.sequence.0,
@@ -89,7 +91,7 @@ impl NetworkSocket for TcpNetworkSocket {
             warn!(error = %e, "Failed to lock stream");
             ClientError::Socket(format!("Failed to lock stream: {}", e))
         })?;
-        
+
         stream.set_read_timeout(Some(timeout)).map_err(|e| {
             warn!(error = %e, "Failed to set timeout");
             ClientError::Socket(format!("Failed to set timeout: {}", e))

@@ -1,12 +1,12 @@
 use anyhow::Result;
 use clap::Parser;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::sync::Arc;
 use synapse::client::init_logging_with_config;
 use synapse::protocol::PACKET_SIZE;
 use synapse::server::{ServerConfig, ServerMonitor};
 use tracing::{debug, error, info};
-use std::io::{Read, Write};
-use std::net::TcpListener;
-use std::sync::Arc;
 
 fn main() {
     // Parse CLI arguments
@@ -70,19 +70,19 @@ fn run(config: ServerConfig) -> Result<()> {
             Ok(mut stream) => {
                 let peer_addr = stream.peer_addr().ok();
                 info!(peer = ?peer_addr, "New client connected");
-                
+
                 let counters = Arc::clone(&counters);
-                
+
                 // Spawn a thread to handle this client
                 std::thread::spawn(move || {
                     let mut buf = [0u8; PACKET_SIZE];
-                    
+
                     loop {
                         // TCP is stream-based, so we must use read_exact to read exactly PACKET_SIZE bytes
                         match stream.read_exact(&mut buf) {
                             Ok(_) => {
                                 counters.increment_received();
-                                
+
                                 // Echo back the exact same payload
                                 match stream.write_all(&buf) {
                                     Ok(_) => {
@@ -115,6 +115,6 @@ fn run(config: ServerConfig) -> Result<()> {
             }
         }
     }
-    
+
     Ok(())
 }

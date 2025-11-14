@@ -31,8 +31,8 @@ pub fn init_logging() {
 /// init_logging_with_config("info", true);
 /// ```
 pub fn init_logging_with_config(log_level: &str, json_format: bool) {
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(log_level));
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(log_level));
 
     let registry = tracing_subscriber::registry().with(env_filter);
 

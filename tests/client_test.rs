@@ -86,7 +86,8 @@ fn test_end_to_end_measurement() -> Result<()> {
     thread::sleep(Duration::from_millis(100));
 
     // Create client socket
-    let mut client_socket = TcpNetworkSocket::connect(&format!("127.0.0.1:{}", server_addr.port()))?;
+    let mut client_socket =
+        TcpNetworkSocket::connect(&format!("127.0.0.1:{}", server_addr.port()))?;
     client_socket.set_timeout(Duration::from_millis(1000))?;
 
     // Run warmup phase (quiet mode for tests)

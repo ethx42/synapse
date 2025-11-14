@@ -316,6 +316,153 @@ With `RUST_LOG=debug`, you'll see detailed logs like:
 
 **Tip:** Use `RUST_LOG=debug` when troubleshooting connectivity issues or analyzing packet-level behavior.
 
+## Development
+
+This section covers development workflows for contributors and maintainers.
+
+### Running Tests
+
+Synapse includes both unit tests and integration tests. Run all tests with:
+
+```bash
+cargo test
+```
+
+**What's happening:** Cargo compiles the project in test mode and runs all tests in the `tests/` directory and test functions marked with `#[test]` in the source code.
+
+**Run specific tests:**
+
+```bash
+# Run tests matching a pattern
+cargo test test_end_to_end
+
+# Run only unit tests (tests in src/)
+cargo test --lib
+
+# Run only integration tests (tests in tests/)
+cargo test --tests
+
+# Run a specific integration test file
+cargo test --test client_test
+
+# Run tests with output (show println! output)
+cargo test -- --nocapture
+```
+
+**Test structure:**
+
+- **Unit tests**: Located alongside source code in `src/` (e.g., `src/client/socket.rs` contains tests for socket functionality)
+- **Integration tests**: Located in `tests/` directory
+  - `tests/client_test.rs`: Client integration tests
+  - `tests/integration/client_test.rs`: Additional integration scenarios
+
+### Code Formatting
+
+Format code according to Rust style guidelines:
+
+```bash
+# Check formatting without making changes
+cargo fmt --check
+
+# Format all code
+cargo fmt
+```
+
+**Note:** The project uses `rustfmt` configured via `rust-toolchain.toml`. Formatting is enforced in CI/CD pipelines.
+
+### Linting
+
+Check code for common mistakes and style issues:
+
+```bash
+# Run Clippy linter
+cargo clippy
+
+# Run Clippy with stricter checks (all warnings as errors)
+cargo clippy -- -D warnings
+
+# Run Clippy for release builds (catches additional issues)
+cargo clippy --release
+```
+
+**What Clippy checks:** Common Rust mistakes, performance issues, style inconsistencies, and suggestions for idiomatic Rust code.
+
+**Note:** The project includes `clippy` in `rust-toolchain.toml` for consistent linting across environments.
+
+### Code Coverage
+
+Generate code coverage reports to identify untested code paths:
+
+```bash
+# Install cargo-tarpaulin (if not already installed)
+cargo install cargo-tarpaulin
+
+# Generate coverage report
+cargo tarpaulin --out Html
+
+# Generate coverage with output to terminal
+cargo tarpaulin --out Stdout
+
+# Exclude test files from coverage
+cargo tarpaulin --exclude-files 'tests/*' --exclude-files 'src/bin/*'
+```
+
+**Coverage output:** HTML reports are generated in `tarpaulin-report.html` (open in a browser). Terminal output shows line-by-line coverage percentages.
+
+**Alternative coverage tools:**
+
+- `cargo-llvm-cov`: Uses LLVM's source-based coverage (requires nightly Rust)
+- `grcov`: Works with both stable and nightly Rust
+
+### Build Commands
+
+**Debug build** (faster compilation, includes debug symbols):
+
+```bash
+cargo build
+```
+
+**Release build** (optimized, no debug symbols):
+
+```bash
+cargo build --release
+```
+
+**Build specific binaries:**
+
+```bash
+# Build only the server
+cargo build --release --bin server
+
+# Build only the client
+cargo build --release --bin client
+```
+
+**Clean build artifacts:**
+
+```bash
+# Remove all build artifacts
+cargo clean
+
+# Remove only release artifacts
+cargo clean --release
+```
+
+### Pre-Commit Checklist
+
+Before committing code, ensure:
+
+1. ✅ All tests pass: `cargo test`
+2. ✅ Code is formatted: `cargo fmt`
+3. ✅ No Clippy warnings: `cargo clippy -- -D warnings`
+4. ✅ Code compiles: `cargo build --release`
+
+**Quick validation command:**
+
+```bash
+cargo fmt && cargo clippy -- -D warnings && cargo test && cargo build --release
+```
+
 ## OS-Level Tuning (Recommended)
 
 For the most accurate measurements, apply these OS-level optimizations:

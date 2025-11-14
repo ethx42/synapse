@@ -269,16 +269,16 @@ mod tests {
         // From ClientL7 -> ClientL4 -> ClientL3 -> ClientL2 -> ClientL1 -> ServerL1
         viz.advance();
         assert_eq!(viz.current_position(), PacketPosition::ClientL4);
-        
+
         viz.advance();
         assert_eq!(viz.current_position(), PacketPosition::ClientL3);
-        
+
         viz.advance();
         assert_eq!(viz.current_position(), PacketPosition::ClientL2);
-        
+
         viz.advance();
         assert_eq!(viz.current_position(), PacketPosition::ClientL1);
-        
+
         viz.advance();
         assert_eq!(viz.current_position(), PacketPosition::ServerL1);
 
