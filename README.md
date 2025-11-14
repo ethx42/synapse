@@ -8,8 +8,8 @@ Synapse is a **high-precision stopwatch for measuring how fast two applications 
 
 Think of it as an ultra-fast echo game:
 
-- **Client** shouts "HELLO!" with a sequence number
-- **Server** immediately bounces it back
+- **Client** establishes a TCP connection and sends messages with sequence numbers
+- **Server** immediately echoes each message back through the same connection
 - **Measurement** starts when sent, stops when received
 
 This "round-trip latency" is measured thousands of times for precision.
@@ -118,11 +118,11 @@ cargo run --release --bin server
 You should see:
 
 ```
-Synapse server listening on 0.0.0.0:8080
-Ready to echo packets...
+Synapse TCP server listening on 0.0.0.0:8080
+Ready to accept connections and echo packets...
 ```
 
-**Important:** Keep this terminal window open! The server needs to keep running.
+**Important:** Keep this terminal window open! The server needs to keep running. The server accepts multiple concurrent TCP connections, with each client handled in a separate thread.
 
 ### Step 6: Run the Client
 
@@ -134,7 +134,7 @@ cargo run --release --bin client -- --server 127.0.0.1:8080 --packets 500000
 
 **Note:** The `--` separator is required to pass arguments to the client (not to Cargo).
 
-The client will connect to the server, run the test, and display results. You should see output showing progress, statistics, and a PASS/FAIL verdict.
+The client will establish a TCP connection to the server, run the test over that persistent connection, and display results. You should see output showing progress, statistics, and a PASS/FAIL verdict.
 
 ### Quick Test Example
 
@@ -296,7 +296,7 @@ RUST_LOG=trace cargo run --release --bin server
 ### Log Levels
 
 - **`error`**: Critical errors that cause the application to fail
-- **`warn`**: Warning conditions (e.g., packet loss, sequence mismatches)
+- **`warn`**: Warning conditions (e.g., connection errors, sequence mismatches, timeouts)
 - **`info`**: Informational messages (default) - major phases and completion
 - **`debug`**: Detailed debugging information (packet operations, socket events)
 - **`trace`**: Very verbose tracing (most detailed)
@@ -448,7 +448,7 @@ After the test completes, you'll see a comprehensive summary:
 └─────────────────────────────┘
 
 Packets:  500000 sent, 0 lost (0.00%)
-          └─ Packet loss should be 0% for reliable measurements
+          └─ With TCP, packet loss should be 0% (TCP guarantees delivery, but timeouts can occur)
 
 Duration: 16.44s
           └─ Test completed at 30.4k packets/second
@@ -487,9 +487,9 @@ The bucket distribution visualization uses:
 
 ### What Does Synapse Measure?
 
-Synapse measures **application-level round-trip latency**: `Client App → Client Kernel → Server Kernel → Server App → Server Kernel → Client Kernel → Client App`
+Synapse measures **application-level round-trip latency** over a persistent TCP connection: `Client App → Client Kernel → Server Kernel → Server App → Server Kernel → Client Kernel → Client App`
 
-This captures the full application stack, including processing overhead, scheduler latency, memory allocation, and application-level pauses—unlike network-level tools that only measure kernel-to-kernel connectivity.
+This captures the full application stack, including processing overhead, scheduler latency, memory allocation, and application-level pauses—unlike network-level tools that only measure kernel-to-kernel connectivity. Each client establishes its own TCP connection, and the server handles multiple concurrent connections simultaneously.
 
 ### OSI Model Layers
 
@@ -501,24 +501,27 @@ This means Synapse measures full application-to-application latency, including a
 
 ### Measurement Methodology
 
-1. **Warm-up phase**: Populates ARP tables and warms CPU/OS caches
-2. **Measurement phase**: Uses `Instant::now()` before send and after receive
-3. **Post-processing**: HDR Histogram for accurate percentile calculations
-4. **Blocking I/O**: Uses `std::net` instead of async runtimes for minimal overhead and deterministic timing
+1. **Connection establishment**: Client establishes a TCP connection to the server (one-time overhead)
+2. **Warm-up phase**: Populates ARP tables and warms CPU/OS caches over the persistent connection
+3. **Measurement phase**: Uses `Instant::now()` before send and after receive
+4. **Post-processing**: HDR Histogram for accurate percentile calculations
+5. **Blocking I/O**: Uses `std::net::TcpStream` instead of async runtimes for minimal overhead and deterministic timing
+6. **Connection reuse**: All packets in a test session use the same TCP connection, amortizing the initial handshake cost
 
 ### Message Format
 
-Minimal TCP protocol (8 bytes per packet):
+Minimal TCP protocol (8 bytes per message):
 
-- **Client → Server**: 8-byte sequence number (u64, little-endian: 0, 1, 2, ...)
-- **Server → Client**: Echo response (same 8 bytes)
+- **Client → Server**: 8-byte sequence number (u64, little-endian: 0, 1, 2, ...) sent over a persistent TCP connection
+- **Server → Client**: Echo response (same 8 bytes) sent back through the same connection
 
-The client validates the echoed sequence matches. Zero serialization overhead, no parsing, zero-allocation hot path.
+The client validates the echoed sequence matches. Zero serialization overhead, no parsing, zero-allocation hot path. All messages in a test session are sent over a single TCP connection, which is established once at the beginning and reused for all packets.
 
 ### Limitations
 
-- Single-threaded design (measures single-flow latency)
+- Single connection per client (measures single-flow latency per connection)
 - TCP only (connection-oriented protocol)
+- Server handles multiple concurrent connections (one thread per connection)
 - Loopback and local network optimized (WAN latency will be higher)
 
 ## License
