@@ -8,8 +8,8 @@ Synapse is a **high-precision stopwatch for measuring how fast two applications 
 
 Think of it as an ultra-fast echo game:
 
-- **Client** shouts "HELLO!" with a sequence number
-- **Server** immediately bounces it back
+- **Client** establishes a TCP connection and sends messages with sequence numbers
+- **Server** immediately echoes each message back through the same connection
 - **Measurement** starts when sent, stops when received
 
 This "round-trip latency" is measured thousands of times for precision.
@@ -27,7 +27,7 @@ This is crucial: the network may be fast, but the application might be slow due 
 
 ### Design Principles
 
-- **UDP**: Minimal overhead, no connection ceremony
+- **TCP**: Reliable connection-oriented protocol for guaranteed delivery
 - **Zero-allocation**: Server echoes packets without memory allocations
 - **Blocking I/O**: Single-focused execution, no async runtime overhead
 
@@ -118,11 +118,11 @@ cargo run --release --bin server
 You should see:
 
 ```
-Synapse server listening on 0.0.0.0:8080
-Ready to echo packets...
+Synapse TCP server listening on 0.0.0.0:8080
+Ready to accept connections and echo packets...
 ```
 
-**Important:** Keep this terminal window open! The server needs to keep running.
+**Important:** Keep this terminal window open! The server needs to keep running. The server accepts multiple concurrent TCP connections, with each client handled in a separate thread.
 
 ### Step 6: Run the Client
 
@@ -134,7 +134,7 @@ cargo run --release --bin client -- --server 127.0.0.1:8080 --packets 500000
 
 **Note:** The `--` separator is required to pass arguments to the client (not to Cargo).
 
-The client will connect to the server, run the test, and display results. You should see output showing progress, statistics, and a PASS/FAIL verdict.
+The client will establish a TCP connection to the server, run the test over that persistent connection, and display results. You should see output showing progress, statistics, and a PASS/FAIL verdict.
 
 ### Quick Test Example
 
@@ -296,7 +296,7 @@ RUST_LOG=trace cargo run --release --bin server
 ### Log Levels
 
 - **`error`**: Critical errors that cause the application to fail
-- **`warn`**: Warning conditions (e.g., packet loss, sequence mismatches)
+- **`warn`**: Warning conditions (e.g., connection errors, sequence mismatches, timeouts)
 - **`info`**: Informational messages (default) - major phases and completion
 - **`debug`**: Detailed debugging information (packet operations, socket events)
 - **`trace`**: Very verbose tracing (most detailed)
@@ -307,8 +307,8 @@ With `RUST_LOG=debug`, you'll see detailed logs like:
 
 ```
 2024-01-01T12:00:00.123Z INFO synapse: Starting Synapse client server=127.0.0.1:8080 packets=10000
-2024-01-01T12:00:00.124Z DEBUG synapse::client::socket: Binding UDP socket addr=0.0.0.0:0
-2024-01-01T12:00:00.125Z DEBUG synapse::client::socket: Socket bound successfully
+2024-01-01T12:00:00.124Z DEBUG synapse::client::socket: Connecting TCP stream addr=127.0.0.1:8080
+2024-01-01T12:00:00.125Z DEBUG synapse::client::socket: TCP stream connected successfully
 2024-01-01T12:00:00.126Z INFO synapse: Starting warmup phase warmup_count=100000
 2024-01-01T12:00:00.150Z DEBUG synapse::client::measurement: Packet received successfully latency_ns=12500 sequence=0
 ...
@@ -348,7 +348,7 @@ taskset -c 1 ./target/release/client
 ### Network Interface Tuning (Linux)
 
 ```bash
-# Increase UDP buffer sizes
+# Increase TCP buffer sizes
 sudo sysctl -w net.core.rmem_max=26214400
 sudo sysctl -w net.core.wmem_max=26214400
 sudo sysctl -w net.core.rmem_default=26214400
@@ -436,7 +436,7 @@ Rate: 31.1k pkt/s        ├─────────────────�
   - Layer 1 (Physical): Red → Bright red when active
 - **Animation flow**: Shows conceptual journey—client stack (descending) → network → server stack (ascending) → return path
 - **Sampling**: Animation advances every 100th packet to remain human-perceivable at high throughput
-- **Note**: Layers 5 (Session) and 6 (Presentation) are omitted because UDP is connectionless and uses raw bytes
+- **Note**: Layers 5 (Session) and 6 (Presentation) are omitted because we use raw bytes for minimal protocol overhead
 
 ### Final Results Summary
 
@@ -448,7 +448,7 @@ After the test completes, you'll see a comprehensive summary:
 └─────────────────────────────┘
 
 Packets:  500000 sent, 0 lost (0.00%)
-          └─ Packet loss should be 0% for reliable measurements
+          └─ With TCP, packet loss should be 0% (TCP guarantees delivery, but timeouts can occur)
 
 Duration: 16.44s
           └─ Test completed at 30.4k packets/second
@@ -487,13 +487,13 @@ The bucket distribution visualization uses:
 
 ### What Does Synapse Measure?
 
-Synapse measures **application-level round-trip latency**: `Client App → Client Kernel → Server Kernel → Server App → Server Kernel → Client Kernel → Client App`
+Synapse measures **application-level round-trip latency** over a persistent TCP connection: `Client App → Client Kernel → Server Kernel → Server App → Server Kernel → Client Kernel → Client App`
 
-This captures the full application stack, including processing overhead, scheduler latency, memory allocation, and application-level pauses—unlike network-level tools that only measure kernel-to-kernel connectivity.
+This captures the full application stack, including processing overhead, scheduler latency, memory allocation, and application-level pauses—unlike network-level tools that only measure kernel-to-kernel connectivity. Each client establishes its own TCP connection, and the server handles multiple concurrent connections simultaneously.
 
 ### OSI Model Layers
 
-Synapse's code operates at **Layer 7 (Application)** and **Layer 4 (Transport/UDP)**, bypassing Layers 5-6 since UDP is connectionless and uses raw bytes.
+Synapse's code operates at **Layer 7 (Application)** and **Layer 4 (Transport/TCP)**, bypassing Layers 5-6 since we use raw bytes for minimal overhead.
 
 However, the **latency measurement captures the complete journey** through all active OSI layers (7→4→3→2→1→network→1→2→3→4→7). The OS kernel handles Layers 3-1, but their processing time is included in the round-trip measurement.
 
@@ -501,24 +501,27 @@ This means Synapse measures full application-to-application latency, including a
 
 ### Measurement Methodology
 
-1. **Warm-up phase**: Populates ARP tables and warms CPU/OS caches
-2. **Measurement phase**: Uses `Instant::now()` before send and after receive
-3. **Post-processing**: HDR Histogram for accurate percentile calculations
-4. **Blocking I/O**: Uses `std::net` instead of async runtimes for minimal overhead and deterministic timing
+1. **Connection establishment**: Client establishes a TCP connection to the server (one-time overhead)
+2. **Warm-up phase**: Populates ARP tables and warms CPU/OS caches over the persistent connection
+3. **Measurement phase**: Uses `Instant::now()` before send and after receive
+4. **Post-processing**: HDR Histogram for accurate percentile calculations
+5. **Blocking I/O**: Uses `std::net::TcpStream` instead of async runtimes for minimal overhead and deterministic timing
+6. **Connection reuse**: All packets in a test session use the same TCP connection, amortizing the initial handshake cost
 
 ### Message Format
 
-Minimal UDP protocol (8 bytes per packet):
+Minimal TCP protocol (8 bytes per message):
 
-- **Client → Server**: 8-byte sequence number (u64, little-endian: 0, 1, 2, ...)
-- **Server → Client**: Echo response (same 8 bytes)
+- **Client → Server**: 8-byte sequence number (u64, little-endian: 0, 1, 2, ...) sent over a persistent TCP connection
+- **Server → Client**: Echo response (same 8 bytes) sent back through the same connection
 
-The client validates the echoed sequence matches. Zero serialization overhead, no parsing, zero-allocation hot path.
+The client validates the echoed sequence matches. Zero serialization overhead, no parsing, zero-allocation hot path. All messages in a test session are sent over a single TCP connection, which is established once at the beginning and reused for all packets.
 
 ### Limitations
 
-- Single-threaded design (measures single-flow latency)
-- UDP only (no TCP support)
+- Single connection per client (measures single-flow latency per connection)
+- TCP only (connection-oriented protocol)
+- Server handles multiple concurrent connections (one thread per connection)
 - Loopback and local network optimized (WAN latency will be higher)
 
 ## License

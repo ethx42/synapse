@@ -20,6 +20,6 @@ pub use measurement::{
 };
 pub use progress::ProgressTracker;
 pub use reporter::Reporter;
-pub use socket::{NetworkSocket, UdpNetworkSocket};
+pub use socket::{NetworkSocket, TcpNetworkSocket};
 pub use statistics::Statistics;
 pub use visualizer::OsiVisualizer;

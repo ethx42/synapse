@@ -3,7 +3,7 @@ use clap::Parser;
 use colored::*;
 use synapse::client::{
     init_logging_with_config, measurement_phase, warmup_phase, Config, NetworkSocket, Reporter,
-    Statistics, UdpNetworkSocket,
+    Statistics, TcpNetworkSocket,
 };
 use tracing::{error, info};
 
@@ -36,10 +36,8 @@ fn run(config: Config) -> Result<()> {
         "Starting Synapse client"
     );
 
-    // Create and configure the UDP socket
-    let mut socket = UdpNetworkSocket::bind("0.0.0.0:0").context("Failed to bind UDP socket")?;
-    socket
-        .connect(&config.server)
+    // Create and configure the TCP socket
+    let mut socket = TcpNetworkSocket::connect(&config.server)
         .with_context(|| format!("Failed to connect to server at {}", config.server))?;
     socket
         .set_timeout(config.timeout())

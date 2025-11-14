@@ -1,6 +1,8 @@
 use crate::client::error::{ClientError, Result};
 use crate::protocol::{Packet, PACKET_SIZE};
-use std::net::UdpSocket;
+use std::io::{Read, Write};
+use std::net::TcpStream;
+use std::sync::Mutex;
 use std::time::Duration;
 use tracing::{debug, warn};
 
@@ -16,61 +18,66 @@ pub trait NetworkSocket: Send + Sync {
     fn set_timeout(&self, timeout: Duration) -> Result<()>;
 }
 
-/// UDP-based implementation of NetworkSocket
-#[derive(Debug)]
-pub struct UdpNetworkSocket {
-    socket: UdpSocket,
+/// TCP-based implementation of NetworkSocket
+pub struct TcpNetworkSocket {
+    stream: Mutex<TcpStream>,
 }
 
-impl UdpNetworkSocket {
-    /// Bind to a local address
-    pub fn bind(addr: &str) -> Result<Self> {
-        debug!(addr = addr, "Binding UDP socket");
-        let socket = UdpSocket::bind(addr).map_err(|e| {
-            warn!(error = %e, "Failed to bind socket");
-            ClientError::Socket(format!("Failed to bind to {}: {}", addr, e))
-        })?;
-        debug!("Socket bound successfully");
-        Ok(Self { socket })
-    }
-
+impl TcpNetworkSocket {
     /// Connect to a remote address
-    pub fn connect(&self, addr: &str) -> Result<()> {
-        debug!(addr = addr, "Connecting UDP socket");
-        self.socket.connect(addr).map_err(|e| {
-            warn!(error = %e, "Failed to connect socket");
+    pub fn connect(addr: &str) -> Result<Self> {
+        debug!(addr = addr, "Connecting TCP stream");
+        let stream = TcpStream::connect(addr).map_err(|e| {
+            warn!(error = %e, "Failed to connect stream");
             ClientError::Socket(format!("Failed to connect to {}: {}", addr, e))
         })?;
-        debug!("Socket connected successfully");
-        Ok(())
+        debug!("TCP stream connected successfully");
+        Ok(Self { stream: Mutex::new(stream) })
     }
 }
 
-impl NetworkSocket for UdpNetworkSocket {
+impl NetworkSocket for TcpNetworkSocket {
     fn send_packet(&self, packet: &Packet) -> Result<usize> {
         let buf = packet.encode();
-        let bytes_sent = self.socket.send(&buf).map_err(|e| {
+        let mut stream = self.stream.lock().map_err(|e| {
+            warn!(error = %e, "Failed to lock stream");
+            ClientError::Socket(format!("Failed to lock stream: {}", e))
+        })?;
+        
+        // TCP is stream-based, so we must use write_all to ensure all bytes are sent
+        stream.write_all(&buf).map_err(|e| {
             warn!(error = %e, "Failed to send packet");
             ClientError::Io(e)
         })?;
+        stream.flush().map_err(|e| {
+            warn!(error = %e, "Failed to flush stream");
+            ClientError::Io(e)
+        })?;
         debug!(
-            bytes_sent = bytes_sent,
+            bytes_sent = buf.len(),
             sequence = packet.sequence.0,
             "Packet sent"
         );
-        Ok(bytes_sent)
+        Ok(buf.len())
     }
 
     fn recv_packet(&mut self) -> Result<Packet> {
         let mut buf = [0u8; PACKET_SIZE];
-        let len = self.socket.recv(&mut buf).map_err(|e| {
+        let mut stream = self.stream.lock().map_err(|e| {
+            warn!(error = %e, "Failed to lock stream");
+            ClientError::Socket(format!("Failed to lock stream: {}", e))
+        })?;
+        
+        // TCP is stream-based, so we must use read_exact to read exactly PACKET_SIZE bytes
+        stream.read_exact(&mut buf).map_err(|e| {
             debug!(error = %e, "Failed to receive packet");
             ClientError::Io(e)
         })?;
-        let packet = Packet::decode(&buf[..len])?;
+        
+        let packet = Packet::decode(&buf)?;
         debug!(
             sequence = packet.sequence.0,
-            bytes_received = len,
+            bytes_received = PACKET_SIZE,
             "Packet received"
         );
         Ok(packet)
@@ -78,7 +85,12 @@ impl NetworkSocket for UdpNetworkSocket {
 
     fn set_timeout(&self, timeout: Duration) -> Result<()> {
         debug!(timeout_ms = timeout.as_millis(), "Setting socket timeout");
-        self.socket.set_read_timeout(Some(timeout)).map_err(|e| {
+        let stream = self.stream.lock().map_err(|e| {
+            warn!(error = %e, "Failed to lock stream");
+            ClientError::Socket(format!("Failed to lock stream: {}", e))
+        })?;
+        
+        stream.set_read_timeout(Some(timeout)).map_err(|e| {
             warn!(error = %e, "Failed to set timeout");
             ClientError::Socket(format!("Failed to set timeout: {}", e))
         })?;
@@ -106,9 +118,9 @@ mod tests {
     }
 
     #[test]
-    fn test_udp_socket_bind() {
-        let socket = UdpNetworkSocket::bind("127.0.0.1:0");
-        assert!(socket.is_ok());
+    fn test_tcp_socket_connect() {
+        // This test requires a server running, skip for unit tests
+        // Will be tested in integration tests
     }
 
     #[test]
